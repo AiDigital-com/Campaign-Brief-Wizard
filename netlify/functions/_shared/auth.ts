@@ -3,8 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getUserStatus } from './supabase.js';
 import { log } from './logger.js';
 
-// TODO: Change to your app's identifier
-const EMBED_APP_NAME = 'your-app-name';
+const EMBED_APP_NAME = 'campaign-brief-wizard';
 
 /** Authenticate via Clerk JWT, embed token, or API key.
  *  Embed: X-Embed-Token header → validate_embed_token RPC → userId = "embed:{org_id}"

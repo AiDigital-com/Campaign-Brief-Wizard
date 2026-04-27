@@ -22,7 +22,8 @@ import type { Brief, BriefAsset, BriefSectionKey } from '../lib/types';
 
 interface Props {
   assets: BriefAsset[];
-  onAssetsChange: (next: BriefAsset[]) => void;
+  onUpload: (files: File[]) => void | Promise<void>;
+  onRemove: (assetId: string) => void | Promise<void>;
   brief: Brief | null;
   versionNumber?: number;
   changedSections?: BriefSectionKey[];
@@ -30,13 +31,13 @@ interface Props {
 }
 
 export function Workspace({
-  assets, onAssetsChange, brief, versionNumber, changedSections, chat,
+  assets, onUpload, onRemove, brief, versionNumber, changedSections, chat,
 }: Props) {
   return (
     <div className="cbw-workspace">
       <section className="cbw-workspace__center">
         <div className="cbw-workspace__assets">
-          <AssetRail assets={assets} onChange={onAssetsChange} />
+          <AssetRail assets={assets} onUpload={onUpload} onRemove={onRemove} />
         </div>
         <div className="cbw-workspace__chat">{chat}</div>
       </section>

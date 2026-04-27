@@ -28,6 +28,7 @@ import type { SupabaseClient, SidebarItem } from '@AiDigital-com/design-system';
 import { createClient } from '@supabase/supabase-js';
 import { SignIn, UserButton, useAuth } from '@clerk/react';
 import { Workspace } from './components/Workspace';
+import { useAssetUpload } from './lib/useAssetUpload';
 import type { Brief, BriefAsset, BriefSectionKey, ChatMessage } from './lib/types';
 import './App.css';
 
@@ -148,6 +149,11 @@ function AppContent({
   const [error, setError] = useState<string | null>(null);
   void setVersionNumber; void setChangedSections;  // wired in slice 5
 
+  // Mirror the latest assets array in a ref so the upload hook can read it
+  // without re-creating its callbacks on every render.
+  const assetsRef = useRef<BriefAsset[]>([]);
+  useEffect(() => { assetsRef.current = assets; }, [assets]);
+
   useEffect(() => { setSidebarSupabase(supabase); }, [supabase, setSidebarSupabase]);
 
   const session = useSessionPersistence(supabase, authFetch, userId ?? null, {
@@ -158,6 +164,15 @@ function AppContent({
     defaultFields: { status: 'drafting' },
     mergeEndpoint: '/.netlify/functions/save-session',
     sessionsEndpoint: '/.netlify/functions/get-sessions',
+  });
+
+  const { uploadFiles, removeAsset } = useAssetUpload({
+    supabase,
+    authFetch,
+    sessionId: session.sessionId,
+    userId,
+    assetsRef,
+    onChange: setAssets,
   });
 
   useEffect(() => {
@@ -217,16 +232,11 @@ function AppContent({
     }, 400);
   }, [session]);
 
-  const handleAssetsChange = useCallback((next: BriefAsset[]) => {
-    setAssets(next);
-    // TODO (parallel thread): trigger ingest endpoint to extract a brief
-    //   skeleton from the new assets, then merge result into brief state.
-  }, []);
-
   return (
     <Workspace
       assets={assets}
-      onAssetsChange={handleAssetsChange}
+      onUpload={uploadFiles}
+      onRemove={removeAsset}
       brief={brief}
       versionNumber={versionNumber}
       changedSections={changedSections}

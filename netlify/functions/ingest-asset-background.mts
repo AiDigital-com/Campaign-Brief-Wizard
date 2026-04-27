@@ -29,6 +29,7 @@ import { createLLMProvider } from '@AiDigital-com/design-system/server';
 import { extractDocumentText } from '@AiDigital-com/design-system/document';
 import { createClient } from '@supabase/supabase-js';
 import { log } from './_shared/logger.js';
+import { requireAuthOrEmbed } from './_shared/auth.js';
 import { BRIEF_JSON_SCHEMA } from './_shared/brief.js';
 
 const APP_NAME = 'campaign-brief-wizard';
@@ -57,8 +58,17 @@ export default async (req: Request): Promise<Response> => {
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
   }
 
+  let authUserId: string;
+  try {
+    const auth = await requireAuthOrEmbed(req);
+    authUserId = auth.userId;
+  } catch {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await req.json();
-  const { sessionId, assetId, userId } = body;
+  const { sessionId, assetId } = body;
+  const userId = authUserId;
   if (!sessionId || !assetId) {
     return Response.json({ error: 'Missing sessionId or assetId' }, { status: 400 });
   }
@@ -77,10 +87,11 @@ export default async (req: Request): Promise<Response> => {
     // 1. Load asset row to get the storage URL + filename
     const { data: asset, error: loadErr } = await supabase
       .from('cbw_assets')
-      .select('id, name, type, storage_path')
+      .select('id, name, type, storage_path, user_id')
       .eq('id', assetId)
       .maybeSingle();
     if (loadErr || !asset) throw new Error(`Asset ${assetId} not found`);
+    if (asset.user_id !== userId) throw new Error('Forbidden');
 
     await supabase.from('cbw_assets').update({ ingest_status: 'extracting' }).eq('id', assetId);
 
