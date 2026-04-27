@@ -8,8 +8,7 @@ import type { Context } from '@netlify/functions';
 import { createClient } from '@supabase/supabase-js';
 import { mergeSession } from '@AiDigital-com/design-system/server';
 
-// TODO: Change to your session table name
-const SESSION_TABLE = 'your_sessions';
+const SESSION_TABLE = 'cbw_sessions';
 
 export default async (req: Request, _context: Context) => {
   if (req.method !== 'POST') {

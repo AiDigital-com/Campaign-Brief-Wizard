@@ -45,7 +45,12 @@ export function useAssetUpload({ supabase, sessionId }: Options) {
   const applyRow = useCallback((row: Record<string, unknown>) => {
     if (!row?.id) return;
     const meta = (row.meta || {}) as Record<string, unknown>;
-    const ingestStatus = (meta.ingest_status as string) || 'pending';
+    // ONLY update ingestStatus if the server has actually written one. If
+    // meta.ingest_status is undefined (the brief window between create_asset
+    // and ingest's first meta UPDATE), preserve the optimistic 'extracting'
+    // we set when /upload-asset responded — otherwise the tile flickers from
+    // UPLOADING → COMPLETED → UPLOADING as poll/Realtime events race.
+    const serverStatus = meta.ingest_status as string | undefined;
     const skeleton = meta.brief_skeleton as Record<string, unknown> | undefined;
     const ingestError = (meta.ingest_error as string) || null;
     setState((s) => ({
@@ -53,7 +58,9 @@ export function useAssetUpload({ supabase, sessionId }: Options) {
       assets: s.assets.map((a) => (a.assetId === row.id
         ? {
           ...a,
-          ingestStatus: ingestStatus as AssetState['ingestStatus'],
+          ingestStatus: serverStatus
+            ? (serverStatus as AssetState['ingestStatus'])
+            : a.ingestStatus,
           briefSkeleton: skeleton ?? a.briefSkeleton,
           ingestError: ingestError ?? a.ingestError,
         }
@@ -126,6 +133,10 @@ export function useAssetUpload({ supabase, sessionId }: Options) {
               previewUrl: null,
               supabaseAssetUrl: (row.source_uri as string | null) ?? undefined,
               uploading: false,
+              // Default to 'extracted' for restored rows where the server
+              // wrote meta but somehow lost the status — a row in the table
+              // is by definition past the upload step. Avoids tiles
+              // ressurecting in 'extracting' state on reload.
               ingestStatus: ((meta.ingest_status as string) || 'extracted') as AssetState['ingestStatus'],
               briefSkeleton: meta.brief_skeleton as Record<string, unknown> | undefined,
               ingestError: (meta.ingest_error as string) || null,
