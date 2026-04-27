@@ -1,13 +1,16 @@
 /**
- * BriefArtifact — right pane. Stub for slice 2.
+ * BriefArtifact — right pane.
  *
- * The full 13-section RenderedBrief lands in slice 6. For now this just
- * shows the empty hint or a JSON preview of patched data so wiring slices
- * 4-5 can be verified end-to-end.
+ * Header (title + version pill + live indicator) → tabs (Rendered / Markdown
+ * / Sources, slice 7) → body. Slice 6 ships the Rendered view; Markdown +
+ * Sources tabs land in slice 7, the Updated overlay toggle in slice 8, the
+ * export bar in slice 9.
  *
- * NEVER renders placeholder copy — empty fields = nothing on screen.
+ * Empty state: "the brief will appear here as we talk" — never placeholder
+ * sections, never lorem-ipsum.
  */
 import type { Brief, BriefSectionKey } from '../lib/types';
+import { RenderedBrief } from './RenderedBrief';
 
 interface Props {
   brief: Brief | null;
@@ -15,10 +18,10 @@ interface Props {
   versionNumber?: number;
 }
 
-export function BriefArtifact({ brief, versionNumber }: Props) {
-  const isEmpty = !brief || Object.keys(brief).filter((k) => k !== 'lastUpdatedAt').length === 0;
+export function BriefArtifact({ brief, versionNumber, changedSections }: Props) {
+  const hasContent = brief && Object.keys(brief).filter((k) => k !== 'lastUpdatedAt').length > 0;
 
-  if (isEmpty) {
+  if (!hasContent) {
     return (
       <div className="cbw-brief cbw-brief--empty">
         <div className="cbw-brief__empty-hint">
@@ -30,13 +33,21 @@ export function BriefArtifact({ brief, versionNumber }: Props) {
 
   return (
     <div className="cbw-brief">
-      <div className="cbw-brief__header">
-        {brief?.title && <h1 className="cbw-brief__title">{brief.title}</h1>}
-        {versionNumber != null && (
-          <span className="cbw-brief__version">v0.{versionNumber}</span>
-        )}
+      <div className="cbw-brief__head">
+        <div className="cbw-brief__head-left">
+          <h2 className="cbw-brief__title-tag">Media brief</h2>
+          {versionNumber != null && (
+            <span className="cbw-brief__version">v0.{versionNumber}</span>
+          )}
+          <span className="cbw-brief__live">
+            <span className="dot" aria-hidden />
+            Live
+          </span>
+        </div>
       </div>
-      <pre className="cbw-brief__preview">{JSON.stringify(brief, null, 2)}</pre>
+      <div className="cbw-brief__body">
+        <RenderedBrief brief={brief!} changedSections={changedSections} />
+      </div>
     </div>
   );
 }
