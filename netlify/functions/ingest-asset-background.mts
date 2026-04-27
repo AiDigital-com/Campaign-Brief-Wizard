@@ -29,79 +29,28 @@ import { createLLMProvider } from '@AiDigital-com/design-system/server';
 import { extractDocumentText } from '@AiDigital-com/design-system/document';
 import { createClient } from '@supabase/supabase-js';
 import { log } from './_shared/logger.js';
+import { BRIEF_JSON_SCHEMA } from './_shared/brief.js';
 
 const APP_NAME = 'campaign-brief-wizard';
 
-// Strict schema: same Brief shape the orchestrator patches, minus runtime
-// fields. The first-pass skeleton from a single doc is rarely complete —
-// every field optional; missing = "this doc didn't say anything useful for
-// that section", which is correct.
-const BRIEF_SKELETON_SCHEMA = {
-  type: 'object',
-  properties: {
-    title: { type: 'string' },
-    audience: { type: 'string' },
-    objective: { type: 'string' },
-    singleMindedProposition: { type: 'string' },
-    currentMindset: { type: 'string' },
-    desiredMindset: { type: 'string' },
-    brand: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        archetype: { type: 'string' },
-        toneOfVoice: { type: 'string' },
-        personality: { type: 'array', items: { type: 'string' } },
-        competitiveContext: { type: 'string' },
-      },
-    },
-    channels: { type: 'array', items: { type: 'string' } },
-    deliverables: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          format: { type: 'string' },
-          specs: { type: 'string' },
-          notes: { type: 'string' },
-        },
-        required: ['id', 'format'],
-      },
-    },
-    timing: {
-      type: 'object',
-      properties: {
-        kickoffDate: { type: 'string' },
-        launchDate: { type: 'string' },
-        milestones: { type: 'array', items: { type: 'string' } },
-      },
-    },
-    budget: {
-      type: 'object',
-      properties: {
-        amount: { type: 'number' },
-        currency: { type: 'string' },
-        notes: { type: 'string' },
-      },
-    },
-    mandatories: { type: 'array', items: { type: 'string' } },
-    doNots: { type: 'array', items: { type: 'string' } },
-    legalNotes: { type: 'string' },
-  },
-};
+const EXTRACTION_PROMPT = `You are reading ONE source document for a 13-section
+campaign media brief. Extract only what's directly stated; do NOT infer, do NOT
+generalize. Return a partial Brief in JSON matching the provided schema. Omit
+any section or field the document doesn't explicitly cover.
 
-const EXTRACTION_PROMPT = `You are reading ONE source document for a campaign brief.
-Extract only what's directly stated; do NOT infer, do NOT generalize.
-Return a partial Brief in JSON matching the schema. Omit any field the
-document doesn't explicitly cover.
+The 13 sections: submission, background, goals, kpis, audience, competitors,
+geos, budget, channels, creative, measurement, deliverables, openQuestions.
 
-If the document is research / a transcript / a deck rather than a brief,
-prefer to populate audience, currentMindset, brand.competitiveContext.
-If it's a prior brief or RFP, prefer objective, deliverables, timing,
-budget, mandatories.
+Heuristics by document type:
+  - RFP / brief: prefer submission, background, goals, deliverables, budget, geos
+  - Audience research / persona deck: prefer audience.primary + audience.personas, competitors
+  - Recap / benchmark deck: prefer kpis, channels (with success/failed tactics), measurement
+  - Brand guidelines: prefer creative (brandLine, materials, RTB)
+  - Email thread / call transcript: prefer background, openQuestions, any explicit constraint
 
-Never invent. Empty output is acceptable if the document has nothing usable.`;
+Never invent. Empty output is acceptable if the document has nothing usable.
+For arrays (kpis, personas, geos, deliverables, openQuestions, etc.) include
+ONLY items the document explicitly mentions.`;
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
@@ -150,7 +99,7 @@ export default async (req: Request): Promise<Response> => {
       userParts: [{ text: `## Document: ${asset.name}\n\n${extractedText.slice(0, 60000)}` }],
       maxTokens: 4096,
       jsonMode: true,
-      responseSchema: BRIEF_SKELETON_SCHEMA,
+      responseSchema: BRIEF_JSON_SCHEMA as unknown as Record<string, unknown>,
       app: `${APP_NAME}:ingest`,
       userId,
     });
@@ -200,28 +149,89 @@ export default async (req: Request): Promise<Response> => {
  * may have hallucinated outside the schema (defense in depth — the schema
  * already enforces this, but we keep the explicit pick so future schema
  * loosening doesn't accidentally let ghost fields through).
+ *
+ * Mirrors the 13-section Brief in src/lib/types.ts.
  */
 function pickBriefFields(raw: any) {
+  if (!raw || typeof raw !== 'object') return {};
+  const arr = (v: unknown) => (Array.isArray(v) ? v : undefined);
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v : undefined);
+
+  const submission = obj(raw.submission);
+  const goals = obj(raw.goals);
+  const audience = obj(raw.audience);
+  const budget = obj(raw.budget);
+  const channels = obj(raw.channels);
+  const creative = obj(raw.creative);
+  const measurement = obj(raw.measurement);
+
   return {
     title: raw.title,
-    audience: raw.audience,
-    objective: raw.objective,
-    singleMindedProposition: raw.singleMindedProposition,
-    currentMindset: raw.currentMindset,
-    desiredMindset: raw.desiredMindset,
-    brand: raw.brand && {
-      name: raw.brand.name,
-      archetype: raw.brand.archetype,
-      toneOfVoice: raw.brand.toneOfVoice,
-      personality: Array.isArray(raw.brand.personality) ? raw.brand.personality : undefined,
-      competitiveContext: raw.brand.competitiveContext,
+    agency: raw.agency,
+    client: raw.client,
+    industry: raw.industry,
+    status: raw.status,
+
+    submission: submission && {
+      client: (submission as any).client,
+      vertical: (submission as any).vertical,
+      clientPOC: (submission as any).clientPOC,
+      aidPOC: (submission as any).aidPOC,
+      clientType: (submission as any).clientType,
+      dueDate: (submission as any).dueDate,
+      priority: (submission as any).priority,
     },
-    channels: Array.isArray(raw.channels) ? raw.channels : undefined,
-    deliverables: Array.isArray(raw.deliverables) ? raw.deliverables : undefined,
-    timing: raw.timing,
-    budget: raw.budget,
-    mandatories: Array.isArray(raw.mandatories) ? raw.mandatories : undefined,
-    doNots: Array.isArray(raw.doNots) ? raw.doNots : undefined,
-    legalNotes: raw.legalNotes,
+
+    background: typeof raw.background === 'string' ? raw.background : undefined,
+
+    goals: goals && {
+      awarenessObjective: (goals as any).awarenessObjective,
+      awarenessMeasure: (goals as any).awarenessMeasure,
+      conversionObjective: (goals as any).conversionObjective,
+      conversionMeasure: (goals as any).conversionMeasure,
+    },
+
+    kpis: arr(raw.kpis),
+
+    audience: audience && {
+      primary: (audience as any).primary,
+      personas: arr((audience as any).personas),
+    },
+
+    competitors: arr(raw.competitors),
+    geos: arr(raw.geos),
+
+    budget: budget && {
+      lines: arr((budget as any).lines),
+      flightStart: (budget as any).flightStart,
+      flightEnd: (budget as any).flightEnd,
+      phases: arr((budget as any).phases),
+    },
+
+    channels: channels && {
+      lines: arr((channels as any).lines),
+      successTactics: arr((channels as any).successTactics),
+      failedTactics: arr((channels as any).failedTactics),
+    },
+
+    creative: creative && {
+      materials: (creative as any).materials,
+      production: (creative as any).production,
+      commsPlatform: (creative as any).commsPlatform,
+      rtb: (creative as any).rtb,
+      brandLine: (creative as any).brandLine,
+    },
+
+    measurement: measurement && {
+      benchmarks: (measurement as any).benchmarks,
+      conversionAction: (measurement as any).conversionAction,
+      reportingCadence: (measurement as any).reportingCadence,
+      accountOwnership: (measurement as any).accountOwnership,
+      inHouse: (measurement as any).inHouse,
+      dashboarding: (measurement as any).dashboarding,
+    },
+
+    deliverables: arr(raw.deliverables),
+    openQuestions: arr(raw.openQuestions),
   };
 }

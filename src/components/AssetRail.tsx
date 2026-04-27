@@ -1,17 +1,17 @@
 /**
- * AssetRail — left pane. Multi-file ingestor for the brief.
+ * AssetRail — top-center pane (per design handoff).
  *
- * Wraps DS UploadZone in `multiple` mode (capped at 10 docs per session for
- * sane LLM context), tracks upload progress per asset, exposes remove.
- *
- * The actual upload + thumbnail logic is delegated to the parallel-thread
- * implementation (a useAssetUpload hook); this component is the surface.
+ * Slice 2 stub: surface only. Real upload + ingest wiring lands in slice 4
+ * (uploads to cbw-assets bucket via signed URL, inserts cbw_assets row,
+ * triggers ingest-asset-background, polls extraction status).
  */
-import { useState } from 'react';
 import { UploadZone } from '@AiDigital-com/design-system';
-import type { BriefAsset } from '../lib/types';
+import type { BriefAsset, AssetKind } from '../lib/types';
 
 const MAX_ASSETS = 10;
+
+const ACCEPT =
+  '.pdf,.docx,.pptx,.xlsx,.csv,.md,.txt,.png,.jpg,.jpeg,.webp';
 
 interface Props {
   assets: BriefAsset[];
@@ -19,14 +19,6 @@ interface Props {
 }
 
 export function AssetRail({ assets, onChange }: Props) {
-  const [dragOver, setDragOver] = useState(false);
-  void dragOver;
-
-  // TODO (parallel thread): wire useAssetUpload hook that handles:
-  //   - upload to Supabase storage bucket `cbw-assets`
-  //   - thumbnail generation (PDF first-page, image)
-  //   - server-side text extraction trigger (POST to ingest-asset-background)
-  //   - per-asset progress + error states
   function handleFiles(files: File[]) {
     const next = [...assets];
     for (const f of files) {
@@ -34,65 +26,75 @@ export function AssetRail({ assets, onChange }: Props) {
       next.push({
         id: crypto.randomUUID(),
         name: f.name,
-        type: coarseType(f),
+        kind: detectKind(f),
         size: f.size,
+        state: 'pending',
         addedAt: new Date().toISOString(),
-        ingestStatus: 'pending',
       });
     }
     onChange(next);
   }
 
   function handleRemove(id: string) {
-    onChange(assets.filter(a => a.id !== id));
+    onChange(assets.filter((a) => a.id !== id));
   }
 
   return (
     <div className="cbw-assets">
       <div className="cbw-assets__header">
-        <h2 className="cbw-assets__title">Source material</h2>
-        <span className="cbw-assets__count">{assets.length} / {MAX_ASSETS}</span>
+        <h2 className="cbw-assets__title">Source materials</h2>
+        <span className="cbw-assets__count">
+          {assets.length} / {MAX_ASSETS}
+        </span>
       </div>
 
       <UploadZone
         multiple
         maxFiles={MAX_ASSETS - assets.length}
+        onFile={(f) => handleFiles([f])}
         onFiles={handleFiles}
-        accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
-        onDragStateChange={setDragOver}
+        onUrl={() => { /* slice 4: ingest URL as an asset */ }}
+        onClear={() => onChange([])}
+        accept={ACCEPT}
       />
 
-      {assets.length === 0 ? (
-        <div className="cbw-assets__empty">
-          Drop research, transcripts, prior briefs, screenshots, or competitor
-          decks. We'll extract what's relevant as you upload.
-        </div>
-      ) : (
-        <ul className="cbw-assets__list">
+      {assets.length > 0 && (
+        <ul className="cbw-assets__grid">
           {assets.map((a) => (
-            <li key={a.id} className="cbw-asset" data-status={a.ingestStatus}>
-              {a.thumbnailUrl ? (
-                <img className="cbw-asset__thumb" src={a.thumbnailUrl} alt="" />
-              ) : (
-                <div className="cbw-asset__thumb cbw-asset__thumb--placeholder">
-                  {a.type.toUpperCase().slice(0, 3)}
-                </div>
-              )}
+            <li key={a.id} className="cbw-asset" data-state={a.state} data-kind={a.kind}>
+              <div className="cbw-asset__icon">
+                {(a.name.split('.').pop() || a.kind).toUpperCase().slice(0, 4)}
+              </div>
               <div className="cbw-asset__meta">
-                <span className="cbw-asset__name" title={a.name}>{a.name}</span>
-                <span className="cbw-asset__sub">
+                <div className="cbw-asset__name" title={a.name}>{a.name}</div>
+                <div className="cbw-asset__sub">
                   {formatSize(a.size)}
-                  {a.ingestStatus && a.ingestStatus !== 'extracted' && (
-                    <> · <em>{a.ingestStatus}</em></>
-                  )}
-                </span>
+                  {a.pagesLabel && <> · {a.pagesLabel}</>}
+                </div>
+                {a.state !== 'ready' && a.state !== 'error' && (
+                  <div className="cbw-asset__progress">
+                    <i style={{ width: `${a.progress ?? 0}%` }} />
+                  </div>
+                )}
+                {a.state === 'error' && a.ingestError && (
+                  <div className="cbw-asset__error">{a.ingestError}</div>
+                )}
+                {a.maps && a.maps.length > 0 && (
+                  <div className="cbw-asset__maps">
+                    {a.maps.map((m, i) => (
+                      <span key={i}>{m}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <button
                 className="cbw-asset__remove"
                 aria-label={`Remove ${a.name}`}
                 onClick={() => handleRemove(a.id)}
                 type="button"
-              >×</button>
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>
@@ -101,16 +103,21 @@ export function AssetRail({ assets, onChange }: Props) {
   );
 }
 
-function coarseType(f: File): string {
+function detectKind(f: File): AssetKind {
   const n = f.name.toLowerCase();
   if (n.endsWith('.pdf')) return 'pdf';
   if (n.endsWith('.docx') || n.endsWith('.doc')) return 'docx';
-  if (n.endsWith('.txt') || n.endsWith('.md')) return 'text';
+  if (n.endsWith('.pptx') || n.endsWith('.ppt')) return 'pptx';
+  if (n.endsWith('.xlsx') || n.endsWith('.xls')) return 'xlsx';
+  if (n.endsWith('.csv')) return 'csv';
+  if (n.endsWith('.md')) return 'md';
+  if (n.endsWith('.txt')) return 'txt';
   if (f.type.startsWith('image/')) return 'image';
   return 'other';
 }
 
-function formatSize(bytes: number): string {
+function formatSize(bytes?: number): string {
+  if (bytes == null) return 'web';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;

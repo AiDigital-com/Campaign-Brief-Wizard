@@ -147,7 +147,7 @@ function AppContent({
 
   useEffect(() => { setSidebarSupabase(supabase); }, [supabase, setSidebarSupabase]);
 
-  const session = useSessionPersistence(supabase, authFetch, userId, {
+  const session = useSessionPersistence(supabase, authFetch, userId ?? null, {
     table: SESSION_TABLE,
     app: APP_NAME,
     titleField: TITLE_FIELD,
@@ -190,26 +190,26 @@ function AppContent({
   // chat AND structured brief patches to the artifact.
   const handleSend = useCallback(async (text: string) => {
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
-    session.addMessage(userMsg);
+    setMessages((prev) => [...prev, userMsg]);
+    session.addMessage(userMsg as never);
     setStreaming(true);
     setError(null);
 
-    // TODO (parallel thread): implement SSE orchestrator that emits:
+    // Slice 5 will replace this with a real SSE pipeline:
     //   { type: 'text_delta', text }
-    //   { type: 'brief_patch', patch: Partial<Brief> }
+    //   { type: 'brief_patch', patch, changedSections }
+    //   { type: 'version_committed', versionNumber, changedSections }
     //   { type: 'done' }
-    // and merge brief_patch into local brief state + persist via session.
     setTimeout(() => {
       const reply: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Orchestrator not yet wired — see parallel thread.',
+        content: 'Orchestrator wiring lands in slice 5.',
       };
-      setMessages(prev => [...prev, reply]);
-      session.addMessage(reply);
+      setMessages((prev) => [...prev, reply]);
+      session.addMessage(reply as never);
       setStreaming(false);
-    }, 600);
+    }, 400);
   }, [session]);
 
   const handleAssetsChange = useCallback((next: BriefAsset[]) => {
@@ -225,7 +225,7 @@ function AppContent({
       brief={brief}
       chat={
         <ChatPanel
-          messages={messages}
+          messages={messages.filter((m) => m.role !== 'system') as never}
           streaming={streaming}
           error={error}
           onSend={handleSend}

@@ -1,126 +1,95 @@
 /**
- * Orchestrator — SSE streaming chat agent.
+ * Orchestrator — SSE streaming chat agent for Campaign Brief Wizard.
  *
- * Uses the DS LLM wrapper (createLLMProvider) for provider-agnostic AI calls.
- * NEVER use @google/genai directly — always go through the DS wrapper.
+ * Per-turn flow:
+ *   1. Load the current Brief from cbw_sessions.brief_data (if sessionId given)
+ *   2. Load asset brief_skeletons (extracted partial briefs from each upload)
+ *   3. Stream chat reply + patch_brief tool calls from Gemini 3.1 Pro
+ *   4. Each patch_brief: emit `brief_patch` SSE event (UI optimistic merge)
+ *      AND accumulate into a per-turn merged patch
+ *   5. End of turn: server merges all patches, appends ONE version row via
+ *      cbw_append_version RPC, emits `version_committed` SSE event
  *
- * Pattern: stream text deltas + tool calls via SSE. Frontend uses parseSSEStream().
+ * Model: gemini-3.1-pro-preview ('analysis' tier) — this is a reasoning-heavy
+ * problem-solving role, not a quick chat. Pro tier mandatory.
  */
 import { createLLMProvider, type ToolDefinition, type ToolCall, type ChatMessage } from '@AiDigital-com/design-system/server';
 import { requireAuthOrEmbed } from './_shared/auth.js';
 import { log } from './_shared/logger.js';
+import { applyBriefPatch, appendBriefVersion, BRIEF_JSON_SCHEMA } from './_shared/brief.js';
 import { createClient } from '@supabase/supabase-js';
 
 const APP_NAME = 'campaign-brief-wizard';
 
-/**
- * patch_brief — the orchestrator's only structured output.
- *
- * Instead of a "dispatch when done" pattern (other apps), CBW's orchestrator
- * patches the brief artifact incrementally as the user converses. Each call
- * to this tool ships a partial Brief that the frontend shallow-merges into
- * the live artifact via SSE event { type: 'brief_patch', patch }.
- *
- * Use ONLY fields you have evidence for. Empty fields are intentional —
- * the frontend renders nothing for them (see CLAUDE.md "No content fallbacks").
- *
- * The schema MUST stay in sync with `src/lib/types.ts:Brief`. If you add a
- * field there, add it here, AND add it to the responseSchema in any
- * `-background` Lambda that writes the brief.
- */
 const PATCH_BRIEF_TOOL: ToolDefinition = {
   name: 'patch_brief',
   description:
-    'Apply a partial update to the campaign brief artifact. Include ONLY fields ' +
-    'you have direct evidence for from the conversation or uploaded sources. ' +
-    'Omit anything speculative — the user can see when the brief is incomplete ' +
-    'and will guide you. Each patch is shallow-merged into the live brief.',
-  parameters: {
-    type: 'object',
-    properties: {
-      title: { type: 'string', description: 'Plain-English brief title (10-15 words).' },
-      audience: { type: 'string' },
-      objective: { type: 'string' },
-      singleMindedProposition: { type: 'string' },
-      currentMindset: { type: 'string' },
-      desiredMindset: { type: 'string' },
-      brand: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          archetype: { type: 'string' },
-          toneOfVoice: { type: 'string' },
-          personality: { type: 'array', items: { type: 'string' } },
-          competitiveContext: { type: 'string' },
-        },
-      },
-      channels: { type: 'array', items: { type: 'string' } },
-      deliverables: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            format: { type: 'string' },
-            specs: { type: 'string' },
-            notes: { type: 'string' },
-          },
-          required: ['id', 'format'],
-        },
-      },
-      timing: {
-        type: 'object',
-        properties: {
-          kickoffDate: { type: 'string' },
-          launchDate: { type: 'string' },
-          milestones: { type: 'array', items: { type: 'string' } },
-        },
-      },
-      budget: {
-        type: 'object',
-        properties: {
-          amount: { type: 'number' },
-          currency: { type: 'string' },
-          notes: { type: 'string' },
-        },
-      },
-      mandatories: { type: 'array', items: { type: 'string' } },
-      doNots: { type: 'array', items: { type: 'string' } },
-      legalNotes: { type: 'string' },
-      openQuestions: {
-        type: 'array',
-        items: { type: 'string' },
-        description:
-          'Specific questions you still need answered to complete the brief. ' +
-          'Phrase them so the user can answer in one short sentence each.',
-      },
-    },
-  },
+    'Apply a partial update to the campaign brief artifact (the 13-section ' +
+    'media brief). Include ONLY fields you have direct evidence for from the ' +
+    'conversation or uploaded sources. Omit anything speculative — the user ' +
+    'sees blank fields as "still gathering" which is correct. Each call is ' +
+    'merged into the live brief; sections may be patched across multiple ' +
+    'tool calls within the same turn.',
+  parameters: BRIEF_JSON_SCHEMA as unknown as Record<string, unknown>,
 };
 
-const SYSTEM_PROMPT = `You are the strategist behind Campaign Brief Wizard.
+const SYSTEM_PROMPT = `You are the strategist behind AI Digital's Campaign Brief Wizard.
 
-Your job is to co-author a coherent campaign brief with the user, iteratively.
-The user is a marketing lead at AI Digital. They will:
-  - drop in raw source material (research, transcripts, prior briefs, decks)
-  - chat with you about the campaign goal, audience, constraints
+Your job: co-author a complete 13-section media brief with the user, iteratively.
+The user is a marketing lead at AI Digital. They drop in raw source material
+(RFPs, follow-up emails, prior decks, audience CSVs, brand guidelines, URLs)
+and chat with you about the campaign.
 
 You produce two outputs in parallel on every turn:
-  1. A short, useful chat reply (text deltas) — answer their question, ask
-     ONE focused follow-up at a time, never a wall of text.
-  2. Patches to the brief artifact via patch_brief — fill in fields you have
-     evidence for, leave the rest empty. Use openQuestions to surface what
-     you still need to know.
+  1. A short, useful chat reply — answer their last point, ask ONE focused
+     follow-up at a time, never a wall of text. Keep it conversational; the
+     artifact is the deliverable.
+  2. Patches to the brief artifact via the patch_brief tool — fill in fields
+     you have evidence for, leave the rest empty.
 
-Rules:
+The brief has 13 sections. Each section maps to a top-level key:
+  01 submission       — client / vertical / POCs / due date / priority
+  02 background       — narrative paragraph on business + market context
+  03 goals            — awareness + conversion objectives & measures
+  04 kpis             — array of { label, base, target }
+  05 audience         — primary description + persona array
+  06 competitors      — array of competitor names / descriptions
+  07 geos             — array of { city, market, primary }
+  08 budget           — line items + flight dates + flight phases
+  09 channels         — channel lines + successTactics + failedTactics
+  10 creative         — materials / production / comms platform / RTB / brand line
+  11 measurement      — benchmarks / conversion action / cadence / ownership / in-house / dashboarding
+  12 deliverables     — array of { kind, eta, note }
+  13 openQuestions    — array of focused questions you still need answered
+
+Doc-level meta also patchable: title, agency, client, industry, status.
+
+Iteration discipline:
   - NEVER invent verdict prose. If you don't have enough info for a field,
-    don't include it in the patch — the artifact will simply show nothing
-    for that field, which is correct.
+    omit it from the patch — the artifact renders nothing for that field
+    and the user can see the gap.
   - Reference uploaded sources by filename when patching from extracted text.
-  - Keep the chat conversational. The artifact is the deliverable.
-  - When the brief reaches a coherent draft (audience + objective + SMP +
-    at least one deliverable + timing OR budget), say so explicitly so the
-    user can export.`;
+  - Keep openQuestions tight: 3-5 focused, answerable-in-one-sentence items.
+  - When the brief reaches a coherent draft (background + goals + audience +
+    at least one deliverable + budget OR timing), say so explicitly so the
+    user can export.
+  - Treat empty arrays/strings as "not yet known" not "the answer is none".`;
+
+function buildSkeletonContext(
+  skeletons: Array<{ name: string; brief_skeleton: Record<string, unknown> | null }>,
+): string {
+  if (!skeletons.length) return '';
+  const blocks = skeletons
+    .filter((s) => s.brief_skeleton && Object.keys(s.brief_skeleton).length > 0)
+    .map((s) => `### ${s.name}\n\`\`\`json\n${JSON.stringify(s.brief_skeleton, null, 2)}\n\`\`\``);
+  if (!blocks.length) return '';
+  return `\n\n## Extracted source skeletons\n\nThe following partial briefs were extracted from uploaded sources. Use them as evidence when patching the brief — and reference the source filename in your reply when you do.\n\n${blocks.join('\n\n')}`;
+}
+
+function buildBriefContext(brief: Record<string, unknown> | null | undefined): string {
+  if (!brief || Object.keys(brief).length === 0) return '\n\n## Current brief\n\n(empty — this is a fresh session)';
+  return `\n\n## Current brief (snapshot before this turn)\n\n\`\`\`json\n${JSON.stringify(brief, null, 2)}\n\`\`\``;
+}
 
 export default async (req: Request) => {
   if (req.method !== 'POST') {
@@ -142,11 +111,31 @@ export default async (req: Request) => {
   }
 
   const body = await req.json();
-  const { messages = [], userId } = body;
+  const { messages = [], userId, sessionId, triggerMessageId } = body;
   const uid = userId || authUserId;
 
   const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-  const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'fast', { supabase });
+  // Pro tier: gemini-3.1-pro-preview — this is a thinking/problem-solving role.
+  const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
+
+  // ── Load context (current brief + extracted asset skeletons) ────────────
+  let currentBrief: Record<string, unknown> = {};
+  let skeletons: Array<{ name: string; brief_skeleton: Record<string, unknown> | null }> = [];
+  if (sessionId) {
+    const [{ data: sess }, { data: assets }] = await Promise.all([
+      supabase.from('cbw_sessions').select('brief_data').eq('id', sessionId).maybeSingle(),
+      supabase
+        .from('cbw_assets')
+        .select('name, brief_skeleton')
+        .eq('session_id', sessionId)
+        .eq('ingest_status', 'extracted'),
+    ]);
+    if (sess?.brief_data) currentBrief = sess.brief_data as Record<string, unknown>;
+    if (assets) skeletons = assets as typeof skeletons;
+  }
+
+  const systemWithContext =
+    SYSTEM_PROMPT + buildBriefContext(currentBrief) + buildSkeletonContext(skeletons);
 
   const chatMessages: ChatMessage[] = messages.map((m: { role: string; content: string }) => ({
     role: m.role as 'user' | 'assistant',
@@ -171,30 +160,73 @@ export default async (req: Request) => {
         user_email: authEmail,
         ai_provider: llm.provider,
         ai_model: llm.model,
-        meta: { messageCount: messages?.length },
+        meta: { sessionId, messageCount: messages?.length, skeletonCount: skeletons.length },
       });
       const startTime = Date.now();
 
+      // Per-turn merged patch (server-authoritative). Each patch_brief call
+      // is layered on top of `mergedBrief`; we accumulate patch input into
+      // `combinedPatch` so the version row records what the turn changed.
+      let mergedBrief: Record<string, unknown> = { ...currentBrief };
+      const combinedPatch: Record<string, unknown> = {};
+
       try {
         const result = await llm.streamChat({
-          system: SYSTEM_PROMPT,
+          system: systemWithContext,
           messages: chatMessages,
           tools: [PATCH_BRIEF_TOOL],
           callbacks: {
             onText: (text) => emit({ type: 'text_delta', text }),
             onToolCalls: (calls: ToolCall[]) => {
               for (const call of calls) {
-                if (call.name === 'patch_brief') {
-                  // Frontend shallow-merges this into the live Brief artifact
-                  // and persists via session.merge.
-                  emit({ type: 'brief_patch', patch: call.args });
+                if (call.name !== 'patch_brief') continue;
+                const args = (call.args || {}) as Record<string, unknown>;
+                // Apply optimistically server-side
+                const { next, changedSections } = applyBriefPatch(mergedBrief, args);
+                mergedBrief = next;
+                // Accumulate raw patch fields for the version row
+                for (const [k, v] of Object.entries(args)) {
+                  if (v !== undefined) combinedPatch[k] = v;
                 }
+                emit({ type: 'brief_patch', patch: args, changedSections });
               }
             },
           },
           app: `${APP_NAME}:orchestrator`,
           userId: uid,
         });
+
+        // ── Persist a single version row for this turn (if anything changed) ─
+        if (sessionId && Object.keys(combinedPatch).length > 0) {
+          const { changedSections } = applyBriefPatch(currentBrief, combinedPatch);
+          if (changedSections.length > 0) {
+            try {
+              const version = await appendBriefVersion(supabase, {
+                sessionId,
+                userId: uid,
+                briefData: mergedBrief,
+                patch: combinedPatch,
+                changedSections,
+                triggerMessageId: triggerMessageId || null,
+                triggerKind: 'chat',
+                rationale: null,
+              });
+              emit({
+                type: 'version_committed',
+                versionNumber: version.version_number,
+                changedSections: version.changed_sections,
+                versionId: version.id,
+              });
+            } catch (err) {
+              log.error('orchestrator.version_append_failed', {
+                function_name: 'orchestrator',
+                user_id: uid,
+                meta: { sessionId, error: String(err) },
+              });
+              emit({ type: 'version_error', message: String(err) });
+            }
+          }
+        }
 
         log.info('orchestrator.complete', {
           function_name: 'orchestrator',
