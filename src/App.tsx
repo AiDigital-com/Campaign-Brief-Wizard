@@ -23,12 +23,13 @@
  * Sidebar lists prior briefs; selecting one rehydrates dialogue + artifact.
  */
 import { useState, useEffect, useRef, useCallback, type Dispatch, type SetStateAction } from 'react';
-import { AppShell, ChatPanel, Sidebar, useSessionPersistence } from '@AiDigital-com/design-system';
+import { AppShell, ChatPanel, Sidebar, useSessionPersistence, parseSSEStream } from '@AiDigital-com/design-system';
 import type { SupabaseClient, SidebarItem } from '@AiDigital-com/design-system';
 import { createClient } from '@supabase/supabase-js';
 import { SignIn, UserButton, useAuth } from '@clerk/react';
 import { Workspace } from './components/Workspace';
 import { useAssetUpload } from './lib/useAssetUpload';
+import { mergeBrief } from './lib/brief';
 import type { Brief, BriefAsset, BriefSectionKey, ChatMessage } from './lib/types';
 import './App.css';
 
@@ -147,7 +148,6 @@ function AppContent({
   const [changedSections, setChangedSections] = useState<BriefSectionKey[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  void setVersionNumber; void setChangedSections;  // wired in slice 5
 
   // Mirror the latest assets array in a ref so the upload hook can read it
   // without re-creating its callbacks on every render.
@@ -206,8 +206,9 @@ function AppContent({
     };
   }, [supabase, session, setActiveSessionId, setLoadingId, setRefreshKey, handlersRef]);
 
-  // Wire orchestrator (parallel thread will implement). Streams text deltas to
-  // chat AND structured brief patches to the artifact.
+  // Stream a turn from the orchestrator. The orchestrator (server) loads
+  // current brief + asset skeletons, streams text deltas + patch_brief tool
+  // calls, and persists ONE cbw_brief_versions row per turn.
   const handleSend = useCallback(async (text: string) => {
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text };
     setMessages((prev) => [...prev, userMsg]);
@@ -215,22 +216,66 @@ function AppContent({
     setStreaming(true);
     setError(null);
 
-    // Slice 5 will replace this with a real SSE pipeline:
-    //   { type: 'text_delta', text }
-    //   { type: 'brief_patch', patch, changedSections }
-    //   { type: 'version_committed', versionNumber, changedSections }
-    //   { type: 'done' }
-    setTimeout(() => {
-      const reply: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: 'Orchestrator wiring lands in slice 5.',
-      };
-      setMessages((prev) => [...prev, reply]);
-      session.addMessage(reply as never);
+    // Pre-create the assistant message so text_delta events can append to it.
+    const assistantId = crypto.randomUUID();
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: 'assistant', content: '' } as ChatMessage,
+    ]);
+
+    let assistantContent = '';
+    let finalBrief: Brief | null = null;
+    let lastChangedSections: BriefSectionKey[] = [];
+
+    try {
+      const res = await authFetch('/.netlify/functions/orchestrator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          userId,
+          sessionId: session.sessionId,
+          triggerMessageId: userMsg.id,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error(`orchestrator ${res.status}`);
+
+      for await (const ev of parseSSEStream(res.body)) {
+        if (ev.type === 'text_delta' && typeof ev.text === 'string') {
+          assistantContent += ev.text;
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: assistantContent } : m)));
+        } else if (ev.type === 'brief_patch' && ev.patch) {
+          finalBrief = mergeBrief(finalBrief ?? brief, ev.patch as Partial<Brief>);
+          setBrief(finalBrief);
+          if (Array.isArray(ev.changedSections)) {
+            lastChangedSections = ev.changedSections as BriefSectionKey[];
+            setChangedSections(lastChangedSections);
+          }
+        } else if (ev.type === 'version_committed') {
+          if (typeof ev.versionNumber === 'number') setVersionNumber(ev.versionNumber);
+          if (Array.isArray(ev.changedSections)) setChangedSections(ev.changedSections as BriefSectionKey[]);
+        } else if (ev.type === 'error') {
+          throw new Error(String(ev.message || 'orchestrator error'));
+        }
+      }
+
+      // Persist the assistant message + (if a version was committed) the brief.
+      const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', content: assistantContent };
+      session.addMessage(assistantMsg as never);
+      if (finalBrief) {
+        session.mergeFields({ brief_data: finalBrief });
+      }
+    } catch (err) {
+      console.error('[cbw] orchestrator failed:', err);
+      setError(String(err));
+      // Keep the assistant bubble but mark it errored
+      setMessages((prev) => prev.map((m) => (m.id === assistantId
+        ? { ...m, content: assistantContent || '(no response — see error banner)' }
+        : m)));
+    } finally {
       setStreaming(false);
-    }, 400);
-  }, [session]);
+    }
+  }, [authFetch, brief, messages, session, userId]);
 
   return (
     <Workspace
