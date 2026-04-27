@@ -35,10 +35,33 @@ export function useAssetUpload({ supabase, sessionId }: Options) {
 
   const uploading = state.assets.some((a) => a.uploading);
 
-  // ── Realtime subscription on canonical assets for the active session ────
-  // The DS handler stamps session_id (text) on the canonical assets row,
-  // so we filter on that. ingest-asset-background updates `meta.ingest_status`
-  // and writes `meta.brief_skeleton` on completion.
+  // ── Sync helpers ────────────────────────────────────────────────────
+  // Three layers keep the client in sync with the canonical assets table:
+  //   1. Realtime postgres_changes (UPDATE) for the session's rows
+  //   2. Polling fallback every 3s while any asset is still 'extracting'
+  //      — covers missed Realtime events, publication gaps, etc.
+  //   3. Load-on-mount fetch when the session changes — recovers from a
+  //      page reload mid-extraction or a previously-stuck tile
+  const applyRow = useCallback((row: Record<string, unknown>) => {
+    if (!row?.id) return;
+    const meta = (row.meta || {}) as Record<string, unknown>;
+    const ingestStatus = (meta.ingest_status as string) || 'pending';
+    const skeleton = meta.brief_skeleton as Record<string, unknown> | undefined;
+    const ingestError = (meta.ingest_error as string) || null;
+    setState((s) => ({
+      ...s,
+      assets: s.assets.map((a) => (a.assetId === row.id
+        ? {
+          ...a,
+          ingestStatus: ingestStatus as AssetState['ingestStatus'],
+          briefSkeleton: skeleton ?? a.briefSkeleton,
+          ingestError: ingestError ?? a.ingestError,
+        }
+        : a)),
+    }));
+  }, []);
+
+  // Realtime subscription
   useEffect(() => {
     if (!supabase || !sessionId) return;
     const channel = (supabase as any).channel(`cbw-assets:${sessionId}`)
@@ -50,28 +73,68 @@ export function useAssetUpload({ supabase, sessionId }: Options) {
           table: 'assets',
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new;
-          if (!row?.id) return;
-          const meta = (row.meta || {}) as Record<string, unknown>;
-          const ingestStatus = (meta.ingest_status as string) || 'pending';
-          const skeleton = meta.brief_skeleton as Record<string, unknown> | undefined;
-          const ingestError = (meta.ingest_error as string) || null;
-          setState((s) => ({
-            ...s,
-            assets: s.assets.map((a) => (a.assetId === row.id
-              ? {
-                ...a,
-                ingestStatus: ingestStatus as AssetState['ingestStatus'],
-                briefSkeleton: skeleton,
-                ingestError: ingestError ?? a.ingestError,
-              }
-              : a)),
-          }));
-        },
+        (payload: { new: Record<string, unknown> }) => applyRow(payload.new),
       )
       .subscribe();
     return () => { (supabase as any).removeChannel?.(channel); };
+  }, [supabase, sessionId, applyRow]);
+
+  // Polling fallback while anything is mid-extraction
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => {
+    if (!supabase) return;
+    const interval = setInterval(async () => {
+      const inflight = stateRef.current.assets.filter(
+        (a) => a.assetId && (a.ingestStatus === 'extracting' || a.ingestStatus === 'pending'),
+      );
+      if (inflight.length === 0) return;
+      const ids = inflight.map((a) => a.assetId!).filter(Boolean);
+      const { data } = await supabase
+        .from('assets')
+        .select('id, meta')
+        .in('id', ids);
+      for (const row of data ?? []) applyRow(row as Record<string, unknown>);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [supabase, applyRow]);
+
+  // Load-on-mount: if a session has prior assets in the canonical table,
+  // restore them so the tile grid reappears after page reload or session select.
+  useEffect(() => {
+    if (!supabase || !sessionId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('assets')
+        .select('id, source_filename, source_mime_type, source_uri, meta')
+        .eq('session_id', sessionId)
+        .eq('created_by_app', 'campaign-brief-wizard')
+        .order('created_at', { ascending: true });
+      if (cancelled || !data) return;
+      setState((s) => {
+        const known = new Set(s.assets.map((a) => a.assetId).filter(Boolean));
+        const restored: AssetState[] = (data as Array<Record<string, unknown>>)
+          .filter((row) => !known.has(row.id as string))
+          .map((row) => {
+            const meta = (row.meta || {}) as Record<string, unknown>;
+            return {
+              id: crypto.randomUUID(),
+              assetId: row.id as string,
+              fileName: (row.source_filename as string | null) ?? '',
+              mimeType: (row.source_mime_type as string | null) ?? '',
+              previewUrl: null,
+              supabaseAssetUrl: (row.source_uri as string | null) ?? undefined,
+              uploading: false,
+              ingestStatus: ((meta.ingest_status as string) || 'extracted') as AssetState['ingestStatus'],
+              briefSkeleton: meta.brief_skeleton as Record<string, unknown> | undefined,
+              ingestError: (meta.ingest_error as string) || null,
+            };
+          });
+        return restored.length ? { ...s, assets: [...s.assets, ...restored] } : s;
+      });
+    })();
+    return () => { cancelled = true; };
   }, [supabase, sessionId]);
 
   const uploadFile = useCallback(async (file: File): Promise<AssetState | null> => {
