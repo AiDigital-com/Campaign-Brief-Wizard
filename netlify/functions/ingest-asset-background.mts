@@ -202,20 +202,22 @@ export default async (req: Request): Promise<Response> => {
       .eq('id', assetId);
 
     // 5. Run Gemini Pro for first-pass skeleton (analysis tier — 3.1 Pro).
-    //    32768 max tokens — uploaded source files are arbitrary-sized RFPs /
-    //    decks; user mandate is "32k tokens should be enough for uploaded
-    //    files". Input slice bumped to 200k chars (~50k input tokens, well
-    //    inside Pro's 1M context) so we don't lose the back of long decks.
-    //    repairJson() handles any residual streaming artefacts.
+    //    16k output cap. The full schema serializes to ~3KB JSON; 16k gives
+    //    headroom for verbose RFPs without enabling 6-minute repetition
+    //    loops we observed at 32k. responseSchema deliberately omitted —
+    //    forcing Pro into a strict schema while ALSO mandating jsonMode +
+    //    full-shape prompt was triggering degenerate token loops (literal
+    //    "0000…0000" tails on a string field). The prompt + jsonMode is
+    //    enough; pickBriefFields + sanitizeSkeleton enforce the shape after.
+    //    Input slice 200k chars (~50k input tokens, inside Pro's 1M context).
     const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
     const result = await llm.generateContent({
       system: EXTRACTION_PROMPT,
       userParts: [
         { text: `## Document: ${asset.source_filename || 'document'}\n\n${doc.text.slice(0, 200000)}` },
       ],
-      maxTokens: 32768,
+      maxTokens: 16384,
       jsonMode: true,
-      responseSchema: BRIEF_JSON_SCHEMA as unknown as Record<string, unknown>,
       app: `${APP_NAME}:ingest`,
       userId,
     });
@@ -225,6 +227,9 @@ export default async (req: Request): Promise<Response> => {
       raw = JSON.parse(result.text);
     } catch {
       raw = JSON.parse(repairJson(result.text));
+    }
+    if (looksDegenerate(raw)) {
+      throw new Error('Skeleton extraction returned a degenerate output (repetition loop)');
     }
     const skeleton = pickBriefFields(raw);
 
@@ -280,6 +285,30 @@ export default async (req: Request): Promise<Response> => {
     return Response.json({ error: String(err) }, { status: 500 });
   }
 };
+
+/**
+ * Detect Gemini repetition-loop output. We saw cases where a field came
+ * back as "Real text...000000…0000010" with hundreds of identical tokens
+ * after a legitimate prefix. Treat any string with >40 consecutive
+ * identical chars as garbage.
+ */
+function looksDegenerate(raw: any): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const stack: unknown[] = [raw];
+  let inspected = 0;
+  while (stack.length && inspected < 500) {
+    const v = stack.pop();
+    inspected++;
+    if (typeof v === 'string') {
+      if (v.length > 80 && /(.)\1{40,}/.test(v)) return true;
+    } else if (Array.isArray(v)) {
+      for (const item of v) stack.push(item);
+    } else if (v && typeof v === 'object') {
+      for (const item of Object.values(v as Record<string, unknown>)) stack.push(item);
+    }
+  }
+  return false;
+}
 
 /**
  * Strict pick: only declared Brief fields survive. Mirrors the 13-section
