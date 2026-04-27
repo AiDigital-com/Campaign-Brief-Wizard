@@ -15,6 +15,7 @@ import { RenderedBrief } from './RenderedBrief';
 import { MarkdownView } from './BriefMarkdown';
 import { SourcesView } from './SourcesView';
 import { BriefVersionsPopover } from './BriefVersionsPopover';
+import { ExportBar } from './ExportBar';
 
 type Tab = 'rendered' | 'markdown' | 'sources';
 const TAB_STORAGE_KEY = 'cbw:artifactTab';
@@ -144,6 +145,7 @@ export function BriefArtifact({
         )}
         {tab === 'sources' && <SourcesView assets={assets} />}
       </div>
+      <ExportBar brief={brief} tab={tab} />
     </div>
   );
 }
