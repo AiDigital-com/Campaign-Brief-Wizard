@@ -23,24 +23,108 @@ import { BRIEF_JSON_SCHEMA } from './_shared/brief.js';
 
 const APP_NAME = 'campaign-brief-wizard';
 
-const EXTRACTION_PROMPT = `You are reading ONE source document for a 13-section
-campaign media brief. Extract only what's directly stated; do NOT infer, do NOT
-generalize. Return a partial Brief in JSON matching the provided schema. Omit
-any section or field the document doesn't explicitly cover.
+const EXTRACTION_PROMPT = `You are reading ONE source document and extracting a
+complete partial brief for AI Digital's 13-section campaign media brief format.
 
-The 13 sections: submission, background, goals, kpis, audience, competitors,
-geos, budget, channels, creative, measurement, deliverables, openQuestions.
+# ABSOLUTE RULES
 
-Heuristics by document type:
-  - RFP / brief: prefer submission, background, goals, deliverables, budget, geos
-  - Audience research / persona deck: prefer audience.primary + audience.personas, competitors
-  - Recap / benchmark deck: prefer kpis, channels (with success/failed tactics), measurement
-  - Brand guidelines: prefer creative (brandLine, materials, RTB)
-  - Email thread / call transcript: prefer background, openQuestions, any explicit constraint
+1. **Always return EVERY top-level key.** The schema has 5 meta keys + 13
+   section keys (18 total). Every one MUST appear in your output. If the
+   document has no evidence for a section, return its empty form:
+     - object section ({}) → empty object \`{}\`
+     - array section ([])  → empty array \`[]\`
+     - string section      → empty string \`""\`
+   Never omit a key. An absent key means "we forgot to look"; an empty
+   value means "we looked, found nothing".
 
-Never invent. Empty output is acceptable if the document has nothing usable.
-For arrays (kpis, personas, geos, deliverables, openQuestions, etc.) include
-ONLY items the document explicitly mentions.`;
+2. **Never invent.** If a fact isn't explicitly in the document, it goes
+   in the empty bucket. Do not infer, paraphrase loosely, or fill from
+   "common practice". The strategist will ask the user follow-up questions
+   to fill gaps; your job is to extract, not to imagine.
+
+3. **Be aggressive about explicit evidence.** RFPs / decks / recap docs
+   contain far more structured detail than they look. If a deck has a
+   "Goals" slide, fill goals.awarenessObjective and goals.conversionObjective
+   from that slide. If an RFP lists \`Q4 2026 Launch\`, that's
+   submission.dueDate. Read the WHOLE document before deciding a section
+   is empty.
+
+# REQUIRED OUTPUT SHAPE
+
+Return exactly this object — every key present, no extras:
+
+\`\`\`json
+{
+  "title":     "",
+  "agency":    "",
+  "client":    "",
+  "industry":  "",
+  "status":    "",
+  "submission":  { "client":"", "vertical":"", "clientPOC":"", "aidPOC":"", "clientType":"", "dueDate":"", "priority":"" },
+  "background":  "",
+  "goals":       { "awarenessObjective":"", "awarenessMeasure":"", "conversionObjective":"", "conversionMeasure":"" },
+  "kpis":        [],
+  "audience":    { "primary":"", "personas":[] },
+  "competitors": [],
+  "geos":        [],
+  "budget":      { "lines":[], "flightStart":"", "flightEnd":"", "phases":[] },
+  "channels":    { "lines":[], "successTactics":[], "failedTactics":[] },
+  "creative":    { "materials":"", "production":"", "commsPlatform":"", "rtb":"", "brandLine":"" },
+  "measurement": { "benchmarks":"", "conversionAction":"", "reportingCadence":"", "accountOwnership":"", "inHouse":"", "dashboarding":"" },
+  "deliverables":  [],
+  "openQuestions": []
+}
+\`\`\`
+
+# WHAT GOES WHERE
+
+- **title / agency / client / industry / status** — top-line meta. Fill from
+  the cover page or first paragraph.
+- **submission** — RFP intake fields. clientPOC and aidPOC are emails or
+  names with role. dueDate is the proposal-due or campaign-due date in
+  ISO form (YYYY-MM-DD) when possible.
+- **background** — narrative paragraph on the business + market context.
+- **goals** — Awareness vs Conversion. awareness*Measure is HOW we'll
+  measure (e.g. "reach + frequency · brand-lift Q2"); the *Objective is
+  WHAT we want (e.g. "spark emotion, normalize the Lottery").
+- **kpis** — array of \`{ "label":"<KPI name>", "base":"<current>", "target":"<goal>" }\`.
+  If only the target is stated, leave base empty. Both label and target are
+  required for an entry to be included.
+- **audience** — primary is a 1-2 sentence summary. personas is an array of
+  \`{ "name", "age", "role", "quote", "initial" }\` — only fill personas
+  that are explicitly described in the doc.
+- **competitors** — array of competitor names or short descriptors.
+- **geos** — array of \`{ "city", "market", "primary":boolean }\`.
+- **budget.lines** — \`[{ "label", "amount":<number, USD> }, ...]\`. amount
+  is a plain integer (no commas, no $).
+- **budget.phases** — \`[{ "name", "startPct":0-100, "widthPct":0-100, "tone":"sample"|"burst"|"sustain" }]\`.
+  Only include if the doc explicitly describes flight phases.
+- **channels.lines** — \`[{ "code":"<short>", "name":"<full>", "amount":<USD int> }]\`.
+- **channels.successTactics** / **failedTactics** — \`[{ "code":"<short>", "name":"<tactic>", "note":"<short detail>" }]\`.
+- **creative** — text fields, fill what the doc says. brandLine is the
+  campaign tagline / slogan if quoted.
+- **measurement** — text fields about how the campaign will be measured,
+  reported, and owned.
+- **deliverables** — \`[{ "kind":"<type>", "eta":"<date or label>", "note":"<short>" }]\`.
+- **openQuestions** — array of strings, one per gap. Phrase each as a
+  question the user can answer in one sentence. Add an entry every time
+  you encounter a section the document partially-but-incompletely covers.
+
+# DOCUMENT TYPE HEURISTICS (just hints, not gates)
+
+- **RFP / new-business brief**: dense in submission, background, goals,
+  geos, budget, deliverables, dueDate.
+- **Audience / persona deck**: dense in audience.primary, audience.personas,
+  sometimes competitors.
+- **Recap / benchmark deck**: dense in kpis, channels (with success and
+  failed tactics in different sections), measurement.
+- **Brand guidelines**: dense in creative.brandLine, creative.materials,
+  creative.rtb.
+- **Email thread / call transcript**: dense in background, openQuestions,
+  scattered constraints — scan for "must / can't / required / exclude".
+
+Read the entire document first. Then build the output object once. Return
+it as raw JSON matching the schema exactly.`;
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {

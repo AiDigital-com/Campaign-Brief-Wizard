@@ -75,6 +75,31 @@ Iteration discipline:
     user can export.
   - Treat empty arrays/strings as "not yet known" not "the answer is none".`;
 
+/** True if the skeleton has at least one meaningfully populated value.
+ *  After slice 11.5 the extraction prompt mandates every top-level key
+ *  appear in the output (with empty defaults), so `Object.keys().length`
+ *  is no longer a useful signal. We walk the values and treat
+ *  empty-string / empty-array / empty-object as "no content". */
+function hasSkeletonContent(skel: Record<string, unknown> | null | undefined): boolean {
+  if (!skel) return false;
+  for (const v of Object.values(skel)) {
+    if (v == null) continue;
+    if (typeof v === 'string') { if (v.trim()) return true; continue; }
+    if (Array.isArray(v)) { if (v.length > 0) return true; continue; }
+    if (typeof v === 'object') {
+      for (const inner of Object.values(v as Record<string, unknown>)) {
+        if (inner == null) continue;
+        if (typeof inner === 'string' && inner.trim()) return true;
+        if (Array.isArray(inner) && inner.length > 0) return true;
+        if (typeof inner === 'object' && inner !== null && Object.keys(inner as object).length > 0) return true;
+      }
+      continue;
+    }
+    return true; // numbers, booleans
+  }
+  return false;
+}
+
 function buildSkeletonContext(
   skeletons: Array<{
     name: string;
@@ -85,12 +110,12 @@ function buildSkeletonContext(
   if (!skeletons.length) return '';
   const blocks: string[] = [];
   for (const s of skeletons) {
-    const hasSkeleton = s.brief_skeleton && Object.keys(s.brief_skeleton).length > 0;
-    if (hasSkeleton) {
+    if (hasSkeletonContent(s.brief_skeleton)) {
       blocks.push(`### ${s.name}\n\`\`\`json\n${JSON.stringify(s.brief_skeleton, null, 2)}\n\`\`\``);
     } else if (s.extracted_excerpt) {
-      // Skeleton extraction missing or failed — surface raw text so the
-      // strategist can still pull evidence from this source.
+      // Either skeleton extraction failed, or the document had no fillable
+      // structure — surface raw text so the strategist can still pull
+      // evidence from this source.
       blocks.push(`### ${s.name} — raw text excerpt\n\`\`\`\n${s.extracted_excerpt}\n\`\`\``);
     }
   }
