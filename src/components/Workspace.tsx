@@ -44,6 +44,7 @@ export function Workspace({
       <aside className="cbw-workspace__brief">
         <BriefArtifact
           brief={brief}
+          assets={assets}
           versionNumber={versionNumber}
           changedSections={changedSections}
         />
