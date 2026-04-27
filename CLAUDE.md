@@ -12,7 +12,7 @@
 | App | Campaign Brief Wizard |
 | Abbrev | CBW |
 | URL | https://briefwizard.apps.aidigitallabs.com |
-| Repo | `boriskulakhmetov-aidigital/Campaign-Brief-Wizard` |
+| Repo | `AiDigital-com/Campaign-Brief-Wizard` |
 | Netlify Site ID | `<TBD>` |
 | Supabase tables | `cbw_sessions`, `cbw_assets` |
 | Storage bucket | `cbw-assets` |
