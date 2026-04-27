@@ -9,8 +9,8 @@ export default async (req: Request, _context: Context) => {
   const { userId } = await requireAuth(req);
   const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   const { data, error } = await supabase
-    .from('app_sessions')
-    .select('id, brand_name, status, created_at')
+    .from('cbw_sessions')
+    .select('id, brief_title, status, created_at')
     .eq('user_id', userId)
     .or('deleted_by_user.is.null,deleted_by_user.eq.false')
     .order('created_at', { ascending: false })

@@ -17,8 +17,10 @@
  */
 import { createTaskWorker } from '@AiDigital-com/design-system/server';
 
+// CBW does not currently enqueue tasks — orchestrator + ingest-asset-background
+// are wired directly. Kept ready for a future pipeline phase.
 export default createTaskWorker({
-  app: 'your-app-name',
+  app: 'campaign-brief-wizard',
   taskFunctionMap: {
     // task_type → background function filename (without .mts)
     run_audit: 'run-audit-background',

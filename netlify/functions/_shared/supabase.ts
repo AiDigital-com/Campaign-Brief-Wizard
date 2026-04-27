@@ -68,7 +68,7 @@ export async function writeJobStatus(jobId: string, payload: Record<string, unkn
   await sb.from('job_status').upsert(
     {
       id: jobId,
-      app: 'your-app-name',  // TODO: Change to your app name
+      app: 'campaign-brief-wizard',
       ...payload,
       updated_at: new Date().toISOString(),
     },

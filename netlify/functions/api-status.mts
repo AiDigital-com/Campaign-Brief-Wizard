@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import { handleApiStatus } from '@boriskulakhmetov-aidigital/design-system/server';
+import { handleApiStatus } from '@AiDigital-com/design-system/server';
 
-const APP_NAME = 'your-app-name'; // TODO: Replace with your app name
+const APP_NAME = 'campaign-brief-wizard';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);

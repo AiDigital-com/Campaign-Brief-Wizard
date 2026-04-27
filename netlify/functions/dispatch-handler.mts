@@ -16,9 +16,13 @@
  */
 import { createDispatchHandler } from '@AiDigital-com/design-system/server';
 
+// CBW does not currently use the batch pipeline — orchestrator owns the
+// brief artifact and patches it incrementally via patch_brief tool calls.
+// Kept wired so a future phase (e.g. a batched "synthesize" pass on demand)
+// can opt in by inserting tasks into pipeline_tasks.
 export default createDispatchHandler({
-  app: 'your-app-name',          // e.g. 'campaign-brief-wizard'
-  sessionTable: 'your_sessions', // e.g. 'cbw_sessions'
-  // skipAuth: true,             // uncomment for unauthenticated public flows
+  app: 'campaign-brief-wizard',
+  sessionTable: 'cbw_sessions',
+  // skipAuth: true,
   // anonymousUserId: 'mobile:anonymous',
 });

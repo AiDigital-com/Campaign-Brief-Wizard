@@ -11,7 +11,9 @@
  * Triggered by task-worker, not called directly. Must accept POST with
  * the pipeline_tasks payload as JSON body.
  *
- * TODO: Replace EXAMPLE_SCHEMA + system prompt + assembler with your domain.
+ * Stub for CBW: the EXAMPLE_SCHEMA / prompt / assembler still need to be
+ * replaced with whatever batched pass we eventually want (e.g. an end-of-
+ * brief "review" sweep). NOT wired into the orchestrator path today.
  */
 import { createLLMProvider } from '@AiDigital-com/design-system/server';
 import { createClient } from '@supabase/supabase-js';
@@ -77,7 +79,7 @@ export default async (req: Request): Promise<Response> => {
       maxTokens: 8192,
       jsonMode: true,
       responseSchema: EXAMPLE_SCHEMA,
-      app: 'your-app-name:run-audit',
+      app: 'campaign-brief-wizard:run-audit',
       userId,
     });
 
@@ -96,7 +98,7 @@ export default async (req: Request): Promise<Response> => {
 
     // Update the session row with the result.
     const { error } = await supabase
-      .from('your_sessions')
+      .from('cbw_sessions')
       .update({ report_data: clean, status: 'complete', updated_at: new Date().toISOString() })
       .eq('id', jobId);
 
@@ -124,7 +126,7 @@ export default async (req: Request): Promise<Response> => {
     });
 
     await supabase
-      .from('your_sessions')
+      .from('cbw_sessions')
       .update({ status: 'error', updated_at: new Date().toISOString() })
       .eq('id', jobId);
 

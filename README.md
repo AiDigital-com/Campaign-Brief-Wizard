@@ -4,7 +4,7 @@ Iterative AI co-author for campaign briefs. Drop in research, transcripts,
 prior briefs and decks; chat with the strategist; watch a coherent brief
 build itself in the right pane as the conversation goes.
 
-**Live:** https://briefwizard.apps.aidigitallabs.com (TBD on first deploy)
+**Live:** https://briefwizard.apps.aidigitallabs.com
 
 ## Build
 
