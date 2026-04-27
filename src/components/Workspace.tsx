@@ -19,12 +19,12 @@ import { type ReactNode } from 'react';
 import type { SupabaseClient } from '@AiDigital-com/design-system';
 import { AssetRail } from './AssetRail';
 import { BriefArtifact } from './BriefArtifact';
-import type { Brief, BriefAsset, BriefSectionKey } from '../lib/types';
+import type { Brief, AssetState, BriefSectionKey } from '../lib/types';
 
 interface Props {
-  assets: BriefAsset[];
+  assets: AssetState[];
   onUpload: (files: File[]) => void | Promise<void>;
-  onRemove: (assetId: string) => void | Promise<void>;
+  onRemove: (id: string) => void;
   brief: Brief | null;
   versionNumber?: number;
   changedSections?: BriefSectionKey[];

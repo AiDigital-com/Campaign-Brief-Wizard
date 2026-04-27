@@ -1,29 +1,18 @@
 /**
  * ingest-asset-background — extract usable text from an uploaded asset
- * and (optionally) emit a first-pass brief skeleton from it.
+ * and emit a first-pass brief skeleton from it.
  *
  * Triggered by the AssetRail upload flow:
- *   client uploads file to Supabase storage `cbw-assets` →
- *   POST /.netlify/functions/ingest-asset-background { sessionId, assetId }
+ *   POST /.netlify/functions/ingest-asset-background { assetId }
  *
- * Why -background: PDF/DOCX text extraction + a Gemini summarization pass
+ * Reads from the canonical `assets` table (created by upload-asset via the
+ * DS createUploadAssetHandler). On success, writes back:
+ *   - assets.extracted_text   ← full text with section markers
+ *   - assets.meta             ← shallow-merged with { brief_skeleton, ingest_status, ingest_error }
+ *
+ * Why -background: PDF/DOCX text extraction + a Gemini Pro analysis pass
  * can comfortably exceed Netlify's 26s streaming-mode timeout on large
  * decks. -background suffix flips this to 15-min budget.
- *
- * Output: writes to `cbw_assets.extracted_text` + `cbw_assets.brief_skeleton`,
- * sets `ingest_status` so the UI's per-asset chip flips green. The
- * orchestrator then has access to the extracted text on subsequent turns.
- *
- * TODO (parallel thread): wire DS document extractors:
- *   - PDF → unpdf (already a DS dep)
- *   - DOCX → mammoth (already a DS dep)
- *   - Image → Gemini vision pass with responseSchema for OCR + caption
- *
- * Strict pattern reminders (also in template CLAUDE.md):
- *   - All LLM calls via createLLMProvider — no direct @google/genai use
- *   - Use responseSchema on the brief_skeleton extraction call
- *   - Strict destructure on the saved skeleton — only declared fields
- *     reach the DB; junk Gemini echoes from source markdown gets dropped
  */
 import { createLLMProvider } from '@AiDigital-com/design-system/server';
 import { extractDocumentText } from '@AiDigital-com/design-system/document';
@@ -58,19 +47,18 @@ export default async (req: Request): Promise<Response> => {
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
   }
 
-  let authUserId: string;
+  let userId: string;
   try {
     const auth = await requireAuthOrEmbed(req);
-    authUserId = auth.userId;
+    userId = auth.userId;
   } catch {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = await req.json();
-  const { sessionId, assetId } = body;
-  const userId = authUserId;
-  if (!sessionId || !assetId) {
-    return Response.json({ error: 'Missing sessionId or assetId' }, { status: 400 });
+  const { assetId } = body as { assetId?: string };
+  if (!assetId) {
+    return Response.json({ error: 'Missing assetId' }, { status: 400 });
   }
 
   const startTime = Date.now();
@@ -80,34 +68,45 @@ export default async (req: Request): Promise<Response> => {
     function_name: 'ingest-asset-background',
     entity_id: assetId,
     user_id: userId,
-    meta: { sessionId },
   });
 
   try {
-    // 1. Load asset row to get the storage URL + filename
+    // 1. Load canonical assets row
     const { data: asset, error: loadErr } = await supabase
-      .from('cbw_assets')
-      .select('id, name, type, storage_path, user_id')
+      .from('assets')
+      .select('id, source_uri, source_filename, source_mime_type, user_id, meta')
       .eq('id', assetId)
       .maybeSingle();
     if (loadErr || !asset) throw new Error(`Asset ${assetId} not found`);
     if (asset.user_id !== userId) throw new Error('Forbidden');
 
-    await supabase.from('cbw_assets').update({ ingest_status: 'extracting' }).eq('id', assetId);
+    // Mark in-flight
+    await supabase
+      .from('assets')
+      .update({ meta: { ...(asset.meta || {}), ingest_status: 'extracting', ingest_error: null } })
+      .eq('id', assetId);
 
-    // 2. Download from Supabase storage and extract text
-    const { data: file, error: downErr } = await supabase.storage
-      .from('cbw-assets')
-      .download(asset.storage_path);
-    if (downErr || !file) throw new Error(`Storage download failed: ${downErr?.message}`);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const extractedText = await extractDocumentText(buffer, asset.name);
+    // 2. Download from the public storage URL (createUploadAssetHandler put
+    //    the file in the bucket and stored its public URL on source_uri).
+    const fileRes = await fetch(asset.source_uri);
+    if (!fileRes.ok) throw new Error(`Source fetch ${fileRes.status}`);
+    const buffer = new Uint8Array(await fileRes.arrayBuffer());
 
-    // 3. Run Gemini with strict responseSchema for first-pass skeleton
+    // 3. Extract text using the proper DS API signature
+    //    ({ buffer, mimeType, fileName }) — NOT positional args.
+    const doc = await extractDocumentText({
+      buffer,
+      mimeType: asset.source_mime_type || 'application/octet-stream',
+      fileName: asset.source_filename || 'document',
+    });
+
+    // 4. Run Gemini Pro for first-pass skeleton (analysis tier — 3.1 Pro)
     const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
     const result = await llm.generateContent({
       system: EXTRACTION_PROMPT,
-      userParts: [{ text: `## Document: ${asset.name}\n\n${extractedText.slice(0, 60000)}` }],
+      userParts: [
+        { text: `## Document: ${asset.source_filename || 'document'}\n\n${doc.text.slice(0, 60000)}` },
+      ],
       maxTokens: 4096,
       jsonMode: true,
       responseSchema: BRIEF_JSON_SCHEMA as unknown as Record<string, unknown>,
@@ -116,16 +115,21 @@ export default async (req: Request): Promise<Response> => {
     });
 
     const raw = JSON.parse(result.text);
-
-    // 4. Strict destructure — only declared fields reach DB
     const skeleton = pickBriefFields(raw);
 
-    await supabase.from('cbw_assets').update({
-      extracted_text: extractedText,
-      brief_skeleton: skeleton,
+    // 5. Write extracted_text + meta
+    const nextMeta = {
+      ...(asset.meta || {}),
       ingest_status: 'extracted',
-      updated_at: new Date().toISOString(),
-    }).eq('id', assetId);
+      ingest_error: null,
+      brief_skeleton: skeleton,
+      char_count: doc.charCount,
+      format: doc.format,
+    };
+    await supabase
+      .from('assets')
+      .update({ extracted_text: doc.text, meta: nextMeta })
+      .eq('id', assetId);
 
     log.info('ingest-asset-background.complete', {
       function_name: 'ingest-asset-background',
@@ -147,21 +151,24 @@ export default async (req: Request): Promise<Response> => {
       error_category: 'ai_api',
       duration_ms: Date.now() - startTime,
     });
+    // Best-effort error stamp; ignore if the row no longer exists
     await supabase
-      .from('cbw_assets')
-      .update({ ingest_status: 'error', ingest_error: String(err).slice(0, 500) })
+      .from('assets')
+      .update({
+        meta: {
+          ingest_status: 'error',
+          ingest_error: String(err).slice(0, 500),
+        },
+      })
       .eq('id', assetId);
     return Response.json({ error: String(err) }, { status: 500 });
   }
 };
 
 /**
- * Strict pick: only declared Brief fields survive. Drops anything Gemini
- * may have hallucinated outside the schema (defense in depth — the schema
- * already enforces this, but we keep the explicit pick so future schema
- * loosening doesn't accidentally let ghost fields through).
- *
- * Mirrors the 13-section Brief in src/lib/types.ts.
+ * Strict pick: only declared Brief fields survive. Mirrors the 13-section
+ * Brief in src/lib/types.ts. Drops anything Gemini may have hallucinated
+ * outside the schema.
  */
 function pickBriefFields(raw: any) {
   if (!raw || typeof raw !== 'object') return {};
@@ -182,7 +189,6 @@ function pickBriefFields(raw: any) {
     client: raw.client,
     industry: raw.industry,
     status: raw.status,
-
     submission: submission && {
       client: (submission as any).client,
       vertical: (submission as any).vertical,
@@ -192,39 +198,31 @@ function pickBriefFields(raw: any) {
       dueDate: (submission as any).dueDate,
       priority: (submission as any).priority,
     },
-
     background: typeof raw.background === 'string' ? raw.background : undefined,
-
     goals: goals && {
       awarenessObjective: (goals as any).awarenessObjective,
       awarenessMeasure: (goals as any).awarenessMeasure,
       conversionObjective: (goals as any).conversionObjective,
       conversionMeasure: (goals as any).conversionMeasure,
     },
-
     kpis: arr(raw.kpis),
-
     audience: audience && {
       primary: (audience as any).primary,
       personas: arr((audience as any).personas),
     },
-
     competitors: arr(raw.competitors),
     geos: arr(raw.geos),
-
     budget: budget && {
       lines: arr((budget as any).lines),
       flightStart: (budget as any).flightStart,
       flightEnd: (budget as any).flightEnd,
       phases: arr((budget as any).phases),
     },
-
     channels: channels && {
       lines: arr((channels as any).lines),
       successTactics: arr((channels as any).successTactics),
       failedTactics: arr((channels as any).failedTactics),
     },
-
     creative: creative && {
       materials: (creative as any).materials,
       production: (creative as any).production,
@@ -232,7 +230,6 @@ function pickBriefFields(raw: any) {
       rtb: (creative as any).rtb,
       brandLine: (creative as any).brandLine,
     },
-
     measurement: measurement && {
       benchmarks: (measurement as any).benchmarks,
       conversionAction: (measurement as any).conversionAction,
@@ -241,7 +238,6 @@ function pickBriefFields(raw: any) {
       inHouse: (measurement as any).inHouse,
       dashboarding: (measurement as any).dashboarding,
     },
-
     deliverables: arr(raw.deliverables),
     openQuestions: arr(raw.openQuestions),
   };

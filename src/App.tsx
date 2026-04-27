@@ -30,7 +30,7 @@ import { SignIn, UserButton, useAuth } from '@clerk/react';
 import { Workspace } from './components/Workspace';
 import { useAssetUpload } from './lib/useAssetUpload';
 import { mergeBrief } from './lib/brief';
-import type { Brief, BriefAsset, BriefSectionKey, ChatMessage } from './lib/types';
+import type { Brief, BriefSectionKey, ChatMessage } from './lib/types';
 import './App.css';
 
 // ── App Config ───────────────────────────────────────────────────────────────
@@ -142,17 +142,11 @@ function AppContent({
   handlersRef, setSidebarSupabase,
 }: AppContentProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [assets, setAssets] = useState<BriefAsset[]>([]);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [versionNumber, setVersionNumber] = useState<number | undefined>();
   const [changedSections, setChangedSections] = useState<BriefSectionKey[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Mirror the latest assets array in a ref so the upload hook can read it
-  // without re-creating its callbacks on every render.
-  const assetsRef = useRef<BriefAsset[]>([]);
-  useEffect(() => { assetsRef.current = assets; }, [assets]);
 
   useEffect(() => { setSidebarSupabase(supabase); }, [supabase, setSidebarSupabase]);
 
@@ -166,13 +160,9 @@ function AppContent({
     sessionsEndpoint: '/.netlify/functions/get-sessions',
   });
 
-  const { uploadFiles, removeAsset } = useAssetUpload({
+  const { assets, uploadFiles, removeAsset, clearAll } = useAssetUpload({
     supabase,
-    authFetch,
     sessionId: session.sessionId,
-    userId,
-    assetsRef,
-    onChange: setAssets,
   });
 
   useEffect(() => {
@@ -187,13 +177,13 @@ function AppContent({
         setActiveSessionId(id);
         setMessages(data.messages || []);
         setBrief(data.brief_data || null);
-        setAssets(data.assets || []);
+        clearAll();
       },
       onNew: () => {
         session.newSession();
         setMessages([]);
         setBrief(null);
-        setAssets([]);
+        clearAll();
         setVersionNumber(undefined);
         setChangedSections([]);
         setActiveSessionId(null);
@@ -204,7 +194,7 @@ function AppContent({
         setRefreshKey(k => k + 1);
       },
     };
-  }, [supabase, session, setActiveSessionId, setLoadingId, setRefreshKey, handlersRef]);
+  }, [supabase, session, setActiveSessionId, setLoadingId, setRefreshKey, handlersRef, clearAll]);
 
   // Stream a turn from the orchestrator. The orchestrator (server) loads
   // current brief + asset skeletons, streams text deltas + patch_brief tool

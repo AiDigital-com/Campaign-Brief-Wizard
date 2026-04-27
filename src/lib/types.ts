@@ -171,39 +171,36 @@ export interface BriefPatch {
 }
 
 // ── Assets ────────────────────────────────────────────────────────────────
+//
+// CBW asset rows live in the canonical `assets` table (created by the DS
+// upload handler). `AssetState` is the client-side projection used by
+// useAssetUpload — mirrors the SFG shape with CBW-specific extraction state
+// folded in via `ingestStatus` + `briefSkeleton`.
 
-export type AssetKind =
-  | 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'csv'
-  | 'image' | 'url' | 'md' | 'txt' | 'other';
+export type AssetIngestStatus = 'pending' | 'extracting' | 'extracted' | 'error';
 
-export interface BriefAsset {
+export interface AssetState {
+  /** Stable client id (crypto.randomUUID) — React key + remove handle. */
   id: string;
-  name: string;
-  kind: AssetKind;
-  /** Bytes. Absent for URL assets. */
-  size?: number;
-  /** Pre-formatted page/slide/sheet count for the asset card chip
-   *  ("14 pages" / "38 slides" / "live page"). */
-  pagesLabel?: string;
-  /** Public Supabase storage URL once uploaded. */
-  url?: string;
-  /** Internal storage path (bucket-relative). Always set after upload. */
-  storagePath?: string;
-  /** Thumbnail URL if available (PDF first page, image preview). */
-  thumbnailUrl?: string;
-  /** UI state machine. */
-  state: 'pending' | 'uploading' | 'extracting' | 'ready' | 'error';
-  /** 0-100, populated during 'uploading' and 'extracting'. */
-  progress?: number;
-  /** Set once ingest completes — populated by orchestrator from
-   *  brief_skeleton extraction. */
-  hits?: string;          // e.g. "11 passages mapped"
-  maps?: string[];        // ["§ Goals", "§ Budget"] — section pills
-  tags?: string[];        // primary tags
-  minor?: string;         // secondary tag
-  quote?: string;         // pull quote shown in Sources tab
-  ingestError?: string;
-  addedAt: string;
+  /** ID of the canonical `assets` row. Set once /upload-asset returns. */
+  assetId?: string;
+  fileName?: string;
+  mimeType?: string;
+  /** Local blob: URL for image preview. Only set for image MIME types. */
+  previewUrl?: string | null;
+  /** Public Supabase storage URL — populated by the DS upload handler. */
+  supabaseAssetUrl?: string;
+  /** Free-text label the orchestrator can use when referring to the asset. */
+  label?: string;
+  /** True while the upload-asset POST is in flight. */
+  uploading?: boolean;
+  /** Upload error string (mutually exclusive with `uploading`). */
+  error?: string | null;
+  /** Server-side ingest pipeline state, mirrored from assets.meta.ingest_status. */
+  ingestStatus?: AssetIngestStatus;
+  /** assets.meta.brief_skeleton — populated when ingestStatus='extracted'. */
+  briefSkeleton?: Record<string, unknown>;
+  ingestError?: string | null;
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────
@@ -213,7 +210,8 @@ export type ChatKind = 'message' | 'update' | 'question' | 'typing';
 export interface ChatAssetRef {
   assetId: string;
   name: string;
-  kind: AssetKind;
+  /** MIME type or coarse kind label (e.g. 'pdf', 'docx', 'image'). */
+  kind?: string;
 }
 
 export interface ChatMessage {

@@ -119,19 +119,27 @@ export default async (req: Request) => {
   const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
 
   // ── Load context (current brief + extracted asset skeletons) ────────────
+  // Asset rows live in the canonical `assets` table now (created by the DS
+  // upload handler); CBW-specific extraction state is on `meta.brief_skeleton`.
   let currentBrief: Record<string, unknown> = {};
   let skeletons: Array<{ name: string; brief_skeleton: Record<string, unknown> | null }> = [];
   if (sessionId) {
     const [{ data: sess }, { data: assets }] = await Promise.all([
       supabase.from('cbw_sessions').select('brief_data').eq('id', sessionId).maybeSingle(),
       supabase
-        .from('cbw_assets')
-        .select('name, brief_skeleton')
+        .from('assets')
+        .select('source_filename, meta')
         .eq('session_id', sessionId)
-        .eq('ingest_status', 'extracted'),
+        .eq('created_by_app', APP_NAME)
+        .filter('meta->>ingest_status', 'eq', 'extracted'),
     ]);
     if (sess?.brief_data) currentBrief = sess.brief_data as Record<string, unknown>;
-    if (assets) skeletons = assets as typeof skeletons;
+    if (assets) {
+      skeletons = (assets as Array<{ source_filename: string | null; meta: Record<string, unknown> | null }>).map((a) => ({
+        name: a.source_filename || 'document',
+        brief_skeleton: (a.meta?.brief_skeleton as Record<string, unknown> | undefined) || null,
+      }));
+    }
   }
 
   const systemWithContext =

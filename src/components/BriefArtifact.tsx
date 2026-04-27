@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import type { SupabaseClient } from '@AiDigital-com/design-system';
-import type { Brief, BriefAsset, BriefSectionKey } from '../lib/types';
+import type { Brief, AssetState, BriefSectionKey } from '../lib/types';
 import { RenderedBrief } from './RenderedBrief';
 import { MarkdownView } from './BriefMarkdown';
 import { SourcesView } from './SourcesView';
@@ -22,7 +22,7 @@ const TAB_STORAGE_KEY = 'cbw:artifactTab';
 
 interface Props {
   brief: Brief | null;
-  assets: BriefAsset[];
+  assets: AssetState[];
   changedSections?: BriefSectionKey[];
   versionNumber?: number;
   supabase?: SupabaseClient | null;
@@ -57,7 +57,7 @@ export function BriefArtifact({
     );
   }
 
-  const readyCount = assets.filter((a) => a.state === 'ready').length;
+  const readyCount = assets.filter((a) => a.ingestStatus === 'extracted').length;
 
   return (
     <div className="cbw-brief">
