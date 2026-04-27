@@ -14,7 +14,7 @@
  * can comfortably exceed Netlify's 26s streaming-mode timeout on large
  * decks. -background suffix flips this to 15-min budget.
  */
-import { createLLMProvider } from '@AiDigital-com/design-system/server';
+import { createLLMProvider, repairJson } from '@AiDigital-com/design-system/server';
 import { extractDocumentText } from '@AiDigital-com/design-system/document';
 import { createClient } from '@supabase/supabase-js';
 import { log } from './_shared/logger.js';
@@ -100,24 +100,49 @@ export default async (req: Request): Promise<Response> => {
       fileName: asset.source_filename || 'document',
     });
 
-    // 4. Run Gemini Pro for first-pass skeleton (analysis tier — 3.1 Pro)
+    // 4. Persist extracted_text immediately, BEFORE the Gemini extraction.
+    //    Even if Gemini's skeleton extraction fails, the orchestrator can
+    //    still feed the raw text into the system prompt as context.
+    await supabase
+      .from('assets')
+      .update({
+        extracted_text: doc.text,
+        meta: {
+          ...(asset.meta || {}),
+          ingest_status: 'extracting',
+          ingest_error: null,
+          char_count: doc.charCount,
+          format: doc.format,
+        },
+      })
+      .eq('id', assetId);
+
+    // 5. Run Gemini Pro for first-pass skeleton (analysis tier — 3.1 Pro).
+    //    8192 max tokens — schema can produce ~2-4KB JSON; previous 4096 cap
+    //    was hitting truncation on rich RFPs. repairJson() recovers from any
+    //    remaining truncation/comma/quote issues from Gemini's stream.
     const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
     const result = await llm.generateContent({
       system: EXTRACTION_PROMPT,
       userParts: [
         { text: `## Document: ${asset.source_filename || 'document'}\n\n${doc.text.slice(0, 60000)}` },
       ],
-      maxTokens: 4096,
+      maxTokens: 8192,
       jsonMode: true,
       responseSchema: BRIEF_JSON_SCHEMA as unknown as Record<string, unknown>,
       app: `${APP_NAME}:ingest`,
       userId,
     });
 
-    const raw = JSON.parse(result.text);
+    let raw: any;
+    try {
+      raw = JSON.parse(result.text);
+    } catch {
+      raw = JSON.parse(repairJson(result.text));
+    }
     const skeleton = pickBriefFields(raw);
 
-    // 5. Write extracted_text + meta
+    // 6. Write meta with the skeleton + final 'extracted' status
     const nextMeta = {
       ...(asset.meta || {}),
       ingest_status: 'extracted',
@@ -128,7 +153,7 @@ export default async (req: Request): Promise<Response> => {
     };
     await supabase
       .from('assets')
-      .update({ extracted_text: doc.text, meta: nextMeta })
+      .update({ meta: nextMeta })
       .eq('id', assetId);
 
     log.info('ingest-asset-background.complete', {
@@ -151,11 +176,16 @@ export default async (req: Request): Promise<Response> => {
       error_category: 'ai_api',
       duration_ms: Date.now() - startTime,
     });
-    // Best-effort error stamp; ignore if the row no longer exists
+    // Best-effort error stamp; preserve any extracted_text already written
+    // (step 4 saves the raw text before Gemini runs, so even on skeleton
+    // failure the orchestrator still has source content to work with).
+    const { data: existing } = await supabase
+      .from('assets').select('meta').eq('id', assetId).maybeSingle();
     await supabase
       .from('assets')
       .update({
         meta: {
+          ...((existing?.meta as Record<string, unknown>) || {}),
           ingest_status: 'error',
           ingest_error: String(err).slice(0, 500),
         },

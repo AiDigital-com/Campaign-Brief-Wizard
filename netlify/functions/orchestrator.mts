@@ -76,14 +76,26 @@ Iteration discipline:
   - Treat empty arrays/strings as "not yet known" not "the answer is none".`;
 
 function buildSkeletonContext(
-  skeletons: Array<{ name: string; brief_skeleton: Record<string, unknown> | null }>,
+  skeletons: Array<{
+    name: string;
+    brief_skeleton: Record<string, unknown> | null;
+    extracted_excerpt: string | null;
+  }>,
 ): string {
   if (!skeletons.length) return '';
-  const blocks = skeletons
-    .filter((s) => s.brief_skeleton && Object.keys(s.brief_skeleton).length > 0)
-    .map((s) => `### ${s.name}\n\`\`\`json\n${JSON.stringify(s.brief_skeleton, null, 2)}\n\`\`\``);
+  const blocks: string[] = [];
+  for (const s of skeletons) {
+    const hasSkeleton = s.brief_skeleton && Object.keys(s.brief_skeleton).length > 0;
+    if (hasSkeleton) {
+      blocks.push(`### ${s.name}\n\`\`\`json\n${JSON.stringify(s.brief_skeleton, null, 2)}\n\`\`\``);
+    } else if (s.extracted_excerpt) {
+      // Skeleton extraction missing or failed — surface raw text so the
+      // strategist can still pull evidence from this source.
+      blocks.push(`### ${s.name} — raw text excerpt\n\`\`\`\n${s.extracted_excerpt}\n\`\`\``);
+    }
+  }
   if (!blocks.length) return '';
-  return `\n\n## Extracted source skeletons\n\nThe following partial briefs were extracted from uploaded sources. Use them as evidence when patching the brief — and reference the source filename in your reply when you do.\n\n${blocks.join('\n\n')}`;
+  return `\n\n## Source materials\n\nThe following content was extracted from uploaded sources. Use it as evidence when patching the brief — and reference the source filename in your reply when you do.\n\n${blocks.join('\n\n')}`;
 }
 
 function buildBriefContext(brief: Record<string, unknown> | null | undefined): string {
@@ -119,25 +131,38 @@ export default async (req: Request) => {
   const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
 
   // ── Load context (current brief + extracted asset skeletons) ────────────
-  // Asset rows live in the canonical `assets` table now (created by the DS
-  // upload handler); CBW-specific extraction state is on `meta.brief_skeleton`.
+  // Asset rows live in the canonical `assets` table (created by the DS upload
+  // handler). CBW-specific extraction state is on `meta.brief_skeleton`.
+  // Even rows where Gemini's structured extraction failed are useful — we
+  // fall back to a slice of `extracted_text` so the strategist still sees
+  // the source material.
   let currentBrief: Record<string, unknown> = {};
-  let skeletons: Array<{ name: string; brief_skeleton: Record<string, unknown> | null }> = [];
+  let skeletons: Array<{
+    name: string;
+    brief_skeleton: Record<string, unknown> | null;
+    extracted_excerpt: string | null;
+  }> = [];
   if (sessionId) {
     const [{ data: sess }, { data: assets }] = await Promise.all([
       supabase.from('cbw_sessions').select('brief_data').eq('id', sessionId).maybeSingle(),
+      // Pull every asset for this session — including ones still extracting
+      // or failed. The context builder decides what to surface.
       supabase
         .from('assets')
-        .select('source_filename, meta')
+        .select('source_filename, meta, extracted_text')
         .eq('session_id', sessionId)
-        .eq('created_by_app', APP_NAME)
-        .filter('meta->>ingest_status', 'eq', 'extracted'),
+        .eq('created_by_app', APP_NAME),
     ]);
     if (sess?.brief_data) currentBrief = sess.brief_data as Record<string, unknown>;
     if (assets) {
-      skeletons = (assets as Array<{ source_filename: string | null; meta: Record<string, unknown> | null }>).map((a) => ({
+      skeletons = (assets as Array<{
+        source_filename: string | null;
+        meta: Record<string, unknown> | null;
+        extracted_text: string | null;
+      }>).map((a) => ({
         name: a.source_filename || 'document',
         brief_skeleton: (a.meta?.brief_skeleton as Record<string, unknown> | undefined) || null,
+        extracted_excerpt: a.extracted_text ? a.extracted_text.slice(0, 8000) : null,
       }));
     }
   }
