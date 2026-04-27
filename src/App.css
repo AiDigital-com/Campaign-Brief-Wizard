@@ -1,32 +1,46 @@
-/* CBW — Campaign Brief Wizard.
+/* Campaign Brief Wizard — workspace styles.
  *
- * 3-pane workspace: assets · chat · brief.
- * Theme variables come from the DS (--bg, --surface, --surface2, --border,
- * --text, --text-muted, --accent). Never hardcode hex.
+ * Tokens come from the DS theme via applyTheme(): --bg, --surface, --surface2,
+ * --border, --text, --text-muted, --accent, --accent-dim, --accent-border,
+ * --user-msg-bg, --warning, --brand-blue, --brand-green, --brand-pink,
+ * --brand-black, --violet-pulse, --radius-xs/sm/md, --transition-fast,
+ * --glow-blue, --glow-green, --font-system, --font-mono.
+ *
+ * NEVER hardcode hex; always reference the variable. App-specific
+ * components are prefixed `cbw-` (the design-handoff prototype used
+ * `cbw2-` — production drops the version suffix).
  */
 
 /* ── Workspace shell ────────────────────────────────────────────────────── */
 
+/* Two columns: center column (assets top + chat bottom) + artifact pane.
+ * AppShell renders sidebar/header outside; this fills the main-content area. */
 .cbw-workspace {
   display: grid;
-  grid-template-columns: 280px 1fr 380px;
-  gap: 0;
+  grid-template-columns: minmax(440px, 1fr) clamp(420px, 38vw, 560px);
   height: 100%;
   min-height: 0;
   background: var(--bg);
+  overflow: hidden;
 }
 
-.cbw-workspace__assets,
-.cbw-workspace__brief {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
+.cbw-workspace__center {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
   min-height: 0;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.cbw-workspace__brief {
-  border-right: 0;
-  border-left: 1px solid var(--border);
+.cbw-workspace__assets {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  max-height: 42vh;
+  min-height: 200px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .cbw-workspace__chat {
@@ -35,110 +49,144 @@
   min-height: 0;
   min-width: 0;
   background: var(--bg);
+  overflow: hidden;
 }
 
-@media (max-width: 1280px) {
-  .cbw-workspace { grid-template-columns: 240px 1fr 340px; }
+.cbw-workspace__brief {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-@media (max-width: 1024px) {
-  .cbw-workspace { grid-template-columns: 200px 1fr 320px; }
+/* Below 1100px the artifact pane folds away — slice 8 adds a re-open toggle. */
+@media (max-width: 1100px) {
+  .cbw-workspace {
+    grid-template-columns: 1fr;
+  }
+  .cbw-workspace__brief {
+    display: none;
+  }
 }
 
-/* On narrow viewports, fold the brief artifact under a tab toggle. The toggle
- * UI is parallel-thread work; until then, hide brief on small screens. */
-@media (max-width: 880px) {
-  .cbw-workspace { grid-template-columns: 200px 1fr; }
-  .cbw-workspace__brief { display: none; }
-}
-
-@media (max-width: 640px) {
-  .cbw-workspace { grid-template-columns: 1fr; }
-  .cbw-workspace__assets { display: none; }
-}
-
-/* ── Asset rail ─────────────────────────────────────────────────────────── */
+/* ── Asset rail (top center) ────────────────────────────────────────────── */
 
 .cbw-assets {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 8px;
+  padding: 14px 20px 16px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .cbw-assets__header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
 }
 
 .cbw-assets__title {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  color: var(--text);
   margin: 0;
 }
 
 .cbw-assets__count {
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
 
-.cbw-assets__empty {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  padding: 12px 4px;
-}
-
-.cbw-assets__list {
+.cbw-assets__grid {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
+  overflow-y: auto;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
 }
+
+/* ── Asset card ─────────────────────────────────────────────────────────── */
 
 .cbw-asset {
-  display: grid;
-  grid-template-columns: 36px 1fr 24px;
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
-  border-radius: 8px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-}
-
-.cbw-asset[data-status="extracting"] {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-}
-
-.cbw-asset[data-status="error"] {
-  border-color: rgba(245, 101, 101, 0.5);
-}
-
-.cbw-asset__thumb {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  object-fit: cover;
+  position: relative;
   background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  font-size: 12px;
+  transition: var(--transition-fast);
+  min-width: 0;
 }
 
-.cbw-asset__thumb--placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.cbw-asset:hover {
+  border-color: var(--accent-border);
+  box-shadow: var(--glow-blue-soft);
+}
+
+.cbw-asset[data-state="extracting"],
+.cbw-asset[data-state="uploading"] {
+  border-color: rgba(0, 9, 228, 0.3);
+}
+
+.cbw-asset[data-state="error"] {
+  border-color: rgba(245, 101, 101, 0.4);
+}
+
+.cbw-asset__icon {
+  width: 32px;
+  height: 40px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.05em;
+  color: #fff;
+  letter-spacing: 0.04em;
+  position: relative;
+  align-self: start;
 }
+
+.cbw-asset__icon::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+
+.cbw-asset[data-kind="pdf"]   .cbw-asset__icon { background: #e85a4f; }
+.cbw-asset[data-kind="docx"]  .cbw-asset__icon { background: #2b6cb0; }
+.cbw-asset[data-kind="pptx"]  .cbw-asset__icon { background: #d97706; }
+.cbw-asset[data-kind="xlsx"]  .cbw-asset__icon { background: #2f8a4f; }
+.cbw-asset[data-kind="csv"]   .cbw-asset__icon { background: #2f8a4f; }
+.cbw-asset[data-kind="md"]    .cbw-asset__icon { background: #4a5568; }
+.cbw-asset[data-kind="txt"]   .cbw-asset__icon { background: #4a5568; }
+.cbw-asset[data-kind="image"] .cbw-asset__icon { background: var(--violet-pulse); }
+.cbw-asset[data-kind="url"]   .cbw-asset__icon { background: var(--brand-blue); }
+.cbw-asset[data-kind="other"] .cbw-asset__icon { background: var(--surface2); color: var(--text); }
 
 .cbw-asset__meta {
   min-width: 0;
@@ -151,49 +199,97 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cbw-asset__sub {
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
 }
 
-.cbw-asset__sub em {
-  font-style: normal;
+.cbw-asset__progress {
+  position: relative;
+  height: 2px;
+  background: var(--surface2);
+  border-radius: 999px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.cbw-asset__progress > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  transition: width 0.3s ease;
+}
+
+.cbw-asset__error {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--error, #f56565);
+  margin-top: 4px;
+  white-space: normal;
+}
+
+.cbw-asset__maps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.cbw-asset__maps span {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  background: var(--accent-dim);
   color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 3px;
+  padding: 1px 5px;
 }
 
 .cbw-asset__remove {
-  width: 24px;
-  height: 24px;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
   border-radius: 4px;
   background: transparent;
   border: 0;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
+  opacity: 0;
+  transition: var(--transition-fast);
+}
+
+.cbw-asset:hover .cbw-asset__remove {
+  opacity: 1;
 }
 
 .cbw-asset__remove:hover {
-  background: var(--bg);
+  background: var(--surface2);
   color: var(--text);
 }
 
-/* ── Brief artifact ─────────────────────────────────────────────────────── */
+/* ── Brief artifact (right pane — full layout in slice 6) ───────────────── */
 
 .cbw-brief {
-  padding: 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  height: 100%;
+  min-height: 0;
 }
 
 .cbw-brief--empty {
-  height: 100%;
   align-items: center;
   justify-content: center;
 }
@@ -204,10 +300,20 @@
   text-align: center;
   max-width: 240px;
   line-height: 1.5;
+  padding: 32px 24px;
+}
+
+.cbw-brief__header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .cbw-brief__title {
-  font-family: var(--font-heading-parent, var(--font-family));
+  font-family: var(--font-heading);
   font-size: 22px;
   line-height: 1.2;
   letter-spacing: -0.01em;
@@ -216,73 +322,28 @@
   color: var(--text);
 }
 
-.cbw-brief__section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.cbw-brief__section:last-child {
-  border-bottom: 0;
-}
-
-.cbw-brief__section--open {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-  border-radius: 8px;
-  padding: 12px 14px;
-  border-bottom: 0;
-}
-
-.cbw-brief__heading {
+.cbw-brief__version {
+  font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin: 0 0 4px;
-}
-
-.cbw-brief p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--text);
-}
-
-.cbw-brief p strong {
   font-weight: 600;
-  color: var(--text);
-}
-
-.cbw-brief__note {
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
 }
 
-.cbw-brief__list {
-  margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
+.cbw-brief__preview {
+  font-family: var(--font-mono);
+  font-size: 11px;
   line-height: 1.5;
-  color: var(--text);
-}
-
-.cbw-brief__mindset {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding-top: 4px;
-}
-
-.cbw-brief__mindset-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
+  color: var(--text-muted);
+  background: var(--bg);
+  margin: 0;
+  padding: 16px 24px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

@@ -1,38 +1,51 @@
 /**
- * Workspace — 3-pane shell for the brief-builder.
+ * Workspace — center column (top assets, bottom chat) + right artifact pane.
  *
- *   ┌────────────┬──────────────────────────┬────────────────────────┐
- *   │ AssetRail  │ {chat slot — ChatPanel}  │ BriefArtifact          │
- *   │ (uploads)  │                          │ (live patched output)  │
- *   └────────────┴──────────────────────────┴────────────────────────┘
+ *   ┌─────────────────────────────┬────────────────────────┐
+ *   │  AssetRail                  │  BriefArtifact         │
+ *   │  (top, max ~42vh)           │                        │
+ *   ├─────────────────────────────┤                        │
+ *   │  {chat slot — ChatPanel}    │  (right, ~480-640px)   │
+ *   │  (fills remainder)          │                        │
+ *   └─────────────────────────────┴────────────────────────┘
  *
- * Stays presentational — owns no domain state. Brief patching, chat send,
- * file ingestion all live in App.tsx (and ultimately the orchestrator).
+ * Below 1100px the artifact column hides — slice 8 will add a "show brief"
+ * toggle for narrow viewports.
  *
- * On narrow viewports the artifact pane collapses behind a "Brief" tab
- * (toggle in CBW.css). Asset rail collapses to icon-only.
+ * AppShell owns the outer sidebar + header chrome; this component only fills
+ * the main-content area.
  */
 import { type ReactNode } from 'react';
 import { AssetRail } from './AssetRail';
 import { BriefArtifact } from './BriefArtifact';
-import type { Brief, BriefAsset } from '../lib/types';
+import type { Brief, BriefAsset, BriefSectionKey } from '../lib/types';
 
 interface Props {
   assets: BriefAsset[];
   onAssetsChange: (next: BriefAsset[]) => void;
   brief: Brief | null;
+  versionNumber?: number;
+  changedSections?: BriefSectionKey[];
   chat: ReactNode;
 }
 
-export function Workspace({ assets, onAssetsChange, brief, chat }: Props) {
+export function Workspace({
+  assets, onAssetsChange, brief, versionNumber, changedSections, chat,
+}: Props) {
   return (
     <div className="cbw-workspace">
-      <aside className="cbw-workspace__assets">
-        <AssetRail assets={assets} onChange={onAssetsChange} />
-      </aside>
-      <section className="cbw-workspace__chat">{chat}</section>
+      <section className="cbw-workspace__center">
+        <div className="cbw-workspace__assets">
+          <AssetRail assets={assets} onChange={onAssetsChange} />
+        </div>
+        <div className="cbw-workspace__chat">{chat}</div>
+      </section>
       <aside className="cbw-workspace__brief">
-        <BriefArtifact brief={brief} />
+        <BriefArtifact
+          brief={brief}
+          versionNumber={versionNumber}
+          changedSections={changedSections}
+        />
       </aside>
     </div>
   );

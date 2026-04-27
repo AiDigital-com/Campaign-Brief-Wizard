@@ -28,7 +28,7 @@ import type { SupabaseClient, SidebarItem } from '@AiDigital-com/design-system';
 import { createClient } from '@supabase/supabase-js';
 import { SignIn, UserButton, useAuth } from '@clerk/react';
 import { Workspace } from './components/Workspace';
-import type { Brief, BriefAsset, ChatMessage } from './lib/types';
+import type { Brief, BriefAsset, BriefSectionKey, ChatMessage } from './lib/types';
 import './App.css';
 
 // ── App Config ───────────────────────────────────────────────────────────────
@@ -142,8 +142,11 @@ function AppContent({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [assets, setAssets] = useState<BriefAsset[]>([]);
   const [brief, setBrief] = useState<Brief | null>(null);
+  const [versionNumber, setVersionNumber] = useState<number | undefined>();
+  const [changedSections, setChangedSections] = useState<BriefSectionKey[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  void setVersionNumber; void setChangedSections;  // wired in slice 5
 
   useEffect(() => { setSidebarSupabase(supabase); }, [supabase, setSidebarSupabase]);
 
@@ -176,6 +179,8 @@ function AppContent({
         setMessages([]);
         setBrief(null);
         setAssets([]);
+        setVersionNumber(undefined);
+        setChangedSections([]);
         setActiveSessionId(null);
         setError(null);
       },
@@ -223,6 +228,8 @@ function AppContent({
       assets={assets}
       onAssetsChange={handleAssetsChange}
       brief={brief}
+      versionNumber={versionNumber}
+      changedSections={changedSections}
       chat={
         <ChatPanel
           messages={messages.filter((m) => m.role !== 'system') as never}
