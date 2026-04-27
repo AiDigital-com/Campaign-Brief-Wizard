@@ -249,6 +249,18 @@ function AppContent({
         }
       }
 
+      // If the stream closed without producing any text AND no patch, treat
+      // it as a silent failure — surfaces in chat instead of leaving an empty
+      // bubble that ChatPanel renders as endless typing dots.
+      if (!assistantContent && !finalBrief) {
+        const fallback = 'The strategist did not return a response. Try again.';
+        assistantContent = fallback;
+        setError('Empty orchestrator response');
+        setMessages((prev) => prev.map((m) => (m.id === assistantId
+          ? { ...m, content: fallback }
+          : m)));
+      }
+
       // Persist the assistant message + (if a version was committed) the brief.
       const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', content: assistantContent };
       session.addMessage(assistantMsg as never);
@@ -257,10 +269,11 @@ function AppContent({
       }
     } catch (err) {
       console.error('[cbw] orchestrator failed:', err);
-      setError(String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
       // Keep the assistant bubble but mark it errored
       setMessages((prev) => prev.map((m) => (m.id === assistantId
-        ? { ...m, content: assistantContent || '(no response — see error banner)' }
+        ? { ...m, content: assistantContent || `(failed: ${message})` }
         : m)));
     } finally {
       setStreaming(false);

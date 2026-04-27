@@ -300,16 +300,23 @@ export default async (req: Request) => {
         });
         emit({ type: 'done' });
       } catch (err) {
-        console.error('Orchestrator error:', err);
+        const errMessage = err instanceof Error
+          ? err.message
+          : (typeof err === 'string' ? err : JSON.stringify(err));
+        const errStack = err instanceof Error ? err.stack : undefined;
+        console.error('Orchestrator error:', errMessage, errStack);
         log.error('orchestrator.error', {
           function_name: 'orchestrator',
           user_id: uid,
           user_email: authEmail,
-          error: err,
+          // Plain string fields so the activity_log row has something
+          // queryable; the previous `error: err` serialized to "[object Object]".
+          error: errMessage,
           error_category: 'ai_api',
           duration_ms: Date.now() - startTime,
+          meta: { sessionId, errStack },
         });
-        emit({ type: 'error', message: String(err) });
+        emit({ type: 'error', message: errMessage });
       } finally {
         clearInterval(keepAliveInterval);
         controller.close();
