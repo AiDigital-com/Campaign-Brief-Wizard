@@ -118,16 +118,18 @@ export default async (req: Request): Promise<Response> => {
       .eq('id', assetId);
 
     // 5. Run Gemini Pro for first-pass skeleton (analysis tier — 3.1 Pro).
-    //    8192 max tokens — schema can produce ~2-4KB JSON; previous 4096 cap
-    //    was hitting truncation on rich RFPs. repairJson() recovers from any
-    //    remaining truncation/comma/quote issues from Gemini's stream.
+    //    32768 max tokens — uploaded source files are arbitrary-sized RFPs /
+    //    decks; user mandate is "32k tokens should be enough for uploaded
+    //    files". Input slice bumped to 200k chars (~50k input tokens, well
+    //    inside Pro's 1M context) so we don't lose the back of long decks.
+    //    repairJson() handles any residual streaming artefacts.
     const llm = createLLMProvider('gemini', process.env.GEMINI_API_KEY!, 'analysis', { supabase });
     const result = await llm.generateContent({
       system: EXTRACTION_PROMPT,
       userParts: [
-        { text: `## Document: ${asset.source_filename || 'document'}\n\n${doc.text.slice(0, 60000)}` },
+        { text: `## Document: ${asset.source_filename || 'document'}\n\n${doc.text.slice(0, 200000)}` },
       ],
-      maxTokens: 8192,
+      maxTokens: 32768,
       jsonMode: true,
       responseSchema: BRIEF_JSON_SCHEMA as unknown as Record<string, unknown>,
       app: `${APP_NAME}:ingest`,
