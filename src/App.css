@@ -321,6 +321,25 @@
   min-width: 0;
 }
 
+.cbw-brief__head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cbw-brief__head { position: relative; }
+
+.cbw-brief__version--btn {
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: var(--transition-fast);
+}
+.cbw-brief__version--btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .cbw-brief__title-tag {
   font-size: 13px;
   font-weight: 700;
@@ -1096,6 +1115,192 @@
   padding: 2px 6px;
   margin-left: 8px;
   vertical-align: middle;
+}
+
+/* ── Updated toggle pill ──────────────────────────────────────────────── */
+
+.cbw-upd-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: var(--transition-fast);
+}
+
+.cbw-upd-toggle:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.cbw-upd-toggle__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.cbw-upd-toggle__count {
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  color: var(--text);
+}
+
+.cbw-upd-toggle.on {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.cbw-upd-toggle.on .cbw-upd-toggle__dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: cbw-pulse 1.6s infinite;
+}
+
+.cbw-upd-toggle.on .cbw-upd-toggle__count {
+  background: var(--accent);
+  color: var(--brand-black);
+}
+
+/* ── Version history popover ─────────────────────────────────────────── */
+
+.cbw-history {
+  position: absolute;
+  top: 56px;
+  left: 16px;
+  width: 320px;
+  max-height: 60vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+
+.cbw-history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cbw-history__head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.cbw-history__close {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+.cbw-history__close:hover { background: var(--surface2); color: var(--text); }
+
+.cbw-history__loading,
+.cbw-history__empty,
+.cbw-history__error {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cbw-history__error { color: var(--error, #f56565); }
+
+.cbw-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cbw-history__row {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cbw-history__row:last-child { border-bottom: 0; }
+
+.cbw-history__row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.cbw-history__version {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.cbw-history__when {
+  color: var(--text-muted);
+}
+
+.cbw-history__kind {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+}
+
+.cbw-history__sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cbw-history__sections span {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.cbw-history__rationale {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .cbw-doc.show-updates h2.is-updated {

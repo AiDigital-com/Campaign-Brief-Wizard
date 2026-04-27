@@ -16,6 +16,7 @@
  * the main-content area.
  */
 import { type ReactNode } from 'react';
+import type { SupabaseClient } from '@AiDigital-com/design-system';
 import { AssetRail } from './AssetRail';
 import { BriefArtifact } from './BriefArtifact';
 import type { Brief, BriefAsset, BriefSectionKey } from '../lib/types';
@@ -27,11 +28,14 @@ interface Props {
   brief: Brief | null;
   versionNumber?: number;
   changedSections?: BriefSectionKey[];
+  supabase?: SupabaseClient | null;
+  sessionId?: string | null;
   chat: ReactNode;
 }
 
 export function Workspace({
-  assets, onUpload, onRemove, brief, versionNumber, changedSections, chat,
+  assets, onUpload, onRemove, brief, versionNumber, changedSections,
+  supabase, sessionId, chat,
 }: Props) {
   return (
     <div className="cbw-workspace">
@@ -47,6 +51,8 @@ export function Workspace({
           assets={assets}
           versionNumber={versionNumber}
           changedSections={changedSections}
+          supabase={supabase}
+          sessionId={sessionId}
         />
       </aside>
     </div>

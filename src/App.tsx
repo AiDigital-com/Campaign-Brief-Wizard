@@ -285,6 +285,8 @@ function AppContent({
       brief={brief}
       versionNumber={versionNumber}
       changedSections={changedSections}
+      supabase={supabase}
+      sessionId={session.sessionId}
       chat={
         <ChatPanel
           messages={messages.filter((m) => m.role !== 'system') as never}

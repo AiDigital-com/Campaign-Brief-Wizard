@@ -9,10 +9,12 @@
  * sections, never lorem-ipsum.
  */
 import { useEffect, useState } from 'react';
+import type { SupabaseClient } from '@AiDigital-com/design-system';
 import type { Brief, BriefAsset, BriefSectionKey } from '../lib/types';
 import { RenderedBrief } from './RenderedBrief';
 import { MarkdownView } from './BriefMarkdown';
 import { SourcesView } from './SourcesView';
+import { BriefVersionsPopover } from './BriefVersionsPopover';
 
 type Tab = 'rendered' | 'markdown' | 'sources';
 const TAB_STORAGE_KEY = 'cbw:artifactTab';
@@ -22,9 +24,13 @@ interface Props {
   assets: BriefAsset[];
   changedSections?: BriefSectionKey[];
   versionNumber?: number;
+  supabase?: SupabaseClient | null;
+  sessionId?: string | null;
 }
 
-export function BriefArtifact({ brief, assets, versionNumber, changedSections }: Props) {
+export function BriefArtifact({
+  brief, assets, versionNumber, changedSections, supabase, sessionId,
+}: Props) {
   const hasContent = brief && Object.keys(brief).filter((k) => k !== 'lastUpdatedAt').length > 0;
 
   const [tab, setTab] = useState<Tab>(() => {
@@ -35,6 +41,10 @@ export function BriefArtifact({ brief, assets, versionNumber, changedSections }:
   useEffect(() => {
     if (typeof window !== 'undefined') window.localStorage.setItem(TAB_STORAGE_KEY, tab);
   }, [tab]);
+
+  const [showUpdates, setShowUpdates] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const updatedCount = changedSections?.length ?? 0;
 
   if (!hasContent && assets.length === 0) {
     return (
@@ -54,7 +64,14 @@ export function BriefArtifact({ brief, assets, versionNumber, changedSections }:
         <div className="cbw-brief__head-left">
           <h2 className="cbw-brief__title-tag">Media brief</h2>
           {versionNumber != null && (
-            <span className="cbw-brief__version">v0.{versionNumber}</span>
+            <button
+              type="button"
+              className="cbw-brief__version cbw-brief__version--btn"
+              onClick={() => setHistoryOpen((v) => !v)}
+              aria-haspopup="dialog"
+              aria-expanded={historyOpen}
+              title="Version history"
+            >v0.{versionNumber}</button>
           )}
           {hasContent && (
             <span className="cbw-brief__live">
@@ -63,6 +80,27 @@ export function BriefArtifact({ brief, assets, versionNumber, changedSections }:
             </span>
           )}
         </div>
+        <div className="cbw-brief__head-right">
+          {hasContent && (
+            <button
+              type="button"
+              className={`cbw-upd-toggle${showUpdates ? ' on' : ''}`}
+              onClick={() => setShowUpdates((v) => !v)}
+              title="Highlight sections changed in the latest pass"
+            >
+              <span className="cbw-upd-toggle__dot" aria-hidden />
+              Updated
+              <span className="cbw-upd-toggle__count">{updatedCount}</span>
+            </button>
+          )}
+        </div>
+        {historyOpen && (
+          <BriefVersionsPopover
+            supabase={supabase ?? null}
+            sessionId={sessionId ?? null}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
       </div>
       <div className="cbw-brief__tabs">
         <button
@@ -89,7 +127,11 @@ export function BriefArtifact({ brief, assets, versionNumber, changedSections }:
       </div>
       <div className="cbw-brief__body">
         {tab === 'rendered' && hasContent && (
-          <RenderedBrief brief={brief!} changedSections={changedSections} />
+          <RenderedBrief
+            brief={brief!}
+            changedSections={changedSections}
+            showUpdates={showUpdates}
+          />
         )}
         {tab === 'rendered' && !hasContent && (
           <div className="cbw-brief__empty-hint">
