@@ -134,6 +134,16 @@
   animation: cbw-pulse 1.4s infinite;
 }
 
+/* Hide DS UploadZone's "Upload | URL" tab strip — the design handoff has
+ * a single dropzone, no URL input. UploadZone defaults its internal tab
+ * state to 'upload', so hiding the tabs leaves the dropzone fully wired
+ * and identical to the no-tabs prototype. The DS-side fix would be a
+ * prop (`showUrlTab?: boolean` or `tabs?: ('upload'|'url')[]`); tracked
+ * in the CBW backlog. */
+.cbw-assets .aidl-upload-zone__tabs {
+  display: none;
+}
+
 .cbw-assets__grid {
   list-style: none;
   margin: 0;
