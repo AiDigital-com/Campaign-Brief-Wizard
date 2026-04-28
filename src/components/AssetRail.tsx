@@ -2,9 +2,16 @@
  * AssetRail — top-center pane.
  *
  * Thin wrapper around the DS `<UploadZone>` in multi mode. UploadZone owns
- * both the dropzone AND the tile grid (we feed it `assets` + `onRemove`),
- * so there's no duplicate custom grid here. Mirrors the way SFG composes
- * UploadZone inside its ChatPanel inputPrefix.
+ * the dropzone AND the tile grid (we feed it `assets` + `onRemove`); we
+ * paint a small "Extracting…" status row over the tiles via CSS for the
+ * post-upload / pre-extracted phase, since UploadZone's built-in
+ * `uploading` slot only covers the actual POST window.
+ *
+ * Phase mapping:
+ *   server POST in flight       → UploadZone "Uploading…" badge
+ *   server returned, ingest mid → custom "Extracting…" pill (below name)
+ *   ingest done (extracted)     → clean tile, no badge
+ *   error                       → UploadZone error tile
  */
 import { UploadZone } from '@AiDigital-com/design-system';
 import type { AssetState } from '../lib/types';
@@ -20,6 +27,7 @@ interface Props {
 
 export function AssetRail({ assets, onUpload, onRemove }: Props) {
   const remaining = MAX_ASSETS - assets.length;
+  const extracting = assets.filter((a) => a.ingestStatus === 'extracting');
 
   return (
     <div className="cbw-assets">
@@ -43,10 +51,21 @@ export function AssetRail({ assets, onUpload, onRemove }: Props) {
           id: a.id,
           previewUrl: a.previewUrl ?? null,
           fileName: a.fileName ?? null,
-          uploading: Boolean(a.uploading) || a.ingestStatus === 'extracting',
+          // UploadZone's "Uploading…" overlay only during the actual POST.
+          // Extraction phase is signalled separately below.
+          uploading: Boolean(a.uploading),
           error: a.error ?? a.ingestError ?? null,
         }))}
       />
+
+      {extracting.length > 0 && (
+        <div className="cbw-assets__extracting">
+          <span className="cbw-assets__extracting-dot" aria-hidden />
+          {extracting.length === 1
+            ? `Extracting ${extracting[0].fileName ?? 'source'}…`
+            : `Extracting ${extracting.length} sources…`}
+        </div>
+      )}
     </div>
   );
 }
