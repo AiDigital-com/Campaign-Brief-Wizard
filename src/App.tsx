@@ -216,6 +216,7 @@ function AppContent({
     let assistantContent = '';
     let finalBrief: Brief | null = null;
     let lastChangedSections: BriefSectionKey[] = [];
+    let versionWarning: string | null = null;
 
     try {
       const res = await authFetch('/.netlify/functions/orchestrator', {
@@ -244,18 +245,26 @@ function AppContent({
         } else if (ev.type === 'version_committed') {
           if (typeof ev.versionNumber === 'number') setVersionNumber(ev.versionNumber);
           if (Array.isArray(ev.changedSections)) setChangedSections(ev.changedSections as BriefSectionKey[]);
+        } else if (ev.type === 'version_error') {
+          // Brief patches still applied to local state — server just couldn't
+          // append to cbw_brief_versions. Don't tear down the chat.
+          versionWarning = String(ev.message || 'version persist failed');
+          console.warn('[cbw] version_error:', versionWarning);
         } else if (ev.type === 'error') {
           throw new Error(String(ev.message || 'orchestrator error'));
         }
       }
 
-      // If the stream closed without producing any text AND no patch, treat
-      // it as a silent failure — surfaces in chat instead of leaving an empty
-      // bubble that ChatPanel renders as endless typing dots.
-      if (!assistantContent && !finalBrief) {
-        const fallback = 'The strategist did not return a response. Try again.';
+      // The chat bubble has empty content if no text_delta arrived. Even if
+      // brief_patch events fired, the user expects SOMETHING in the bubble —
+      // otherwise ChatPanel renders the empty assistant message as eternal
+      // typing dots. Synthesize a stand-in.
+      if (!assistantContent) {
+        const fallback = finalBrief
+          ? `Updated the brief${lastChangedSections.length ? ` (${lastChangedSections.join(', ')})` : ''}.`
+          : 'The strategist did not return a response. Try again.';
         assistantContent = fallback;
-        setError('Empty orchestrator response');
+        if (!finalBrief) setError('Empty orchestrator response');
         setMessages((prev) => prev.map((m) => (m.id === assistantId
           ? { ...m, content: fallback }
           : m)));
@@ -266,6 +275,9 @@ function AppContent({
       session.addMessage(assistantMsg as never);
       if (finalBrief) {
         session.mergeFields({ brief_data: finalBrief });
+      }
+      if (versionWarning) {
+        setError(`Brief saved locally; version history unavailable (${versionWarning}).`);
       }
     } catch (err) {
       console.error('[cbw] orchestrator failed:', err);
