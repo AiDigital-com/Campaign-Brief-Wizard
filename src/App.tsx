@@ -112,6 +112,7 @@ export default function App() {
           setActiveSessionId={setActiveSessionId}
           setLoadingId={setLoadingId}
           setRefreshKey={setRefreshKey}
+          refreshSidebar={() => setRefreshKey((k) => k + 1)}
           handlersRef={handlersRef}
           setSidebarSupabase={setSidebarSupabase}
         />
@@ -128,6 +129,7 @@ interface AppContentProps {
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   setLoadingId: Dispatch<SetStateAction<string | null>>;
   setRefreshKey: Dispatch<SetStateAction<number>>;
+  refreshSidebar: () => void;
   handlersRef: React.MutableRefObject<{
     onSelect: (id: string) => void;
     onNew: () => void;
@@ -138,7 +140,7 @@ interface AppContentProps {
 
 function AppContent({
   authFetch, supabase, userId,
-  setActiveSessionId, setLoadingId, setRefreshKey,
+  setActiveSessionId, setLoadingId, setRefreshKey, refreshSidebar,
   handlersRef, setSidebarSupabase,
 }: AppContentProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -278,6 +280,14 @@ function AppContent({
       }
       if (versionWarning) {
         setError(`Brief saved locally; version history unavailable (${versionWarning}).`);
+      }
+      // Refresh the sidebar so the session label flips from the auto-generated
+      // first-message title to the campaign name (DB trigger derives
+      // brief_title from brief_data.title server-side).
+      if (finalBrief?.title) {
+        // Small delay so the save-session merge has a chance to land before
+        // the sidebar re-fetches.
+        setTimeout(() => refreshSidebar(), 800);
       }
     } catch (err) {
       console.error('[cbw] orchestrator failed:', err);
