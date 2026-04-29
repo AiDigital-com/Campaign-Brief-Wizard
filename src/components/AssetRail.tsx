@@ -43,7 +43,6 @@ export function AssetRail({ assets, onUpload, onRemove }: Props) {
         maxFiles={Math.max(remaining, 0)}
         onFile={(f) => onUpload([f])}
         onFiles={(files) => onUpload(files)}
-        onUrl={() => { /* slice 11.1: ingest URL as an asset */ }}
         onClear={() => { /* per-tile remove handles cleanup */ }}
         onRemove={onRemove}
         accept={ACCEPT}
