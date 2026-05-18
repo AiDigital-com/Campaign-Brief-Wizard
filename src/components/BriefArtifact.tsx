@@ -9,7 +9,7 @@
  * sections, never lorem-ipsum.
  */
 import { useEffect, useState } from 'react';
-import type { SupabaseClient } from '@AiDigital-com/design-system';
+import type { SupabaseClient } from '@AiDigital-com/design-system-client';
 import type { Brief, AssetState, BriefSectionKey } from '../lib/types';
 import { RenderedBrief } from './RenderedBrief';
 import { MarkdownView } from './BriefMarkdown';

@@ -17,7 +17,7 @@
  * by the client via /.netlify/functions/ingest-asset-background after this
  * call returns the assetId.
  */
-import { createUploadAssetHandler } from '@AiDigital-com/design-system/server';
+import { createUploadAssetHandler } from '@AiDigital-com/design-system-sdk/server';
 
 export default createUploadAssetHandler({
   app: 'campaign-brief-wizard',

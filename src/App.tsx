@@ -23,8 +23,8 @@
  * Sidebar lists prior briefs; selecting one rehydrates dialogue + artifact.
  */
 import { useState, useEffect, useRef, useCallback, type Dispatch, type SetStateAction } from 'react';
-import { AppShell, ChatPanel, Sidebar, useSessionPersistence, parseSSEStream } from '@AiDigital-com/design-system';
-import type { SupabaseClient, SidebarItem } from '@AiDigital-com/design-system';
+import { AppShell, ChatPanel, Sidebar, useSessionPersistence, parseSSEStream } from '@AiDigital-com/design-system-client';
+import type { SupabaseClient, SidebarItem } from '@AiDigital-com/design-system-client';
 import { createClient } from '@supabase/supabase-js';
 import { SignIn, UserButton, useAuth } from '@clerk/react';
 import { Workspace } from './components/Workspace';

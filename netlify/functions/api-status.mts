@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { handleApiStatus } from '@AiDigital-com/design-system/server';
+import { handleApiStatus } from '@AiDigital-com/design-system-sdk/server';
 
 const APP_NAME = 'campaign-brief-wizard';
 

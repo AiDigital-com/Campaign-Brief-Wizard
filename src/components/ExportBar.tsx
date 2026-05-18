@@ -16,7 +16,7 @@
  * non-Rendered tabs to keep the contract obvious).
  */
 import { useState } from 'react';
-import { downloadMarkdown, downloadVisualPDF } from '@AiDigital-com/design-system';
+import { downloadMarkdown, downloadVisualPDF } from '@AiDigital-com/design-system-client';
 import { briefToMarkdown } from './BriefMarkdown';
 import type { Brief } from '../lib/types';
 

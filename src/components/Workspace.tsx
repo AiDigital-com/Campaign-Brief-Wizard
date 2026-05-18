@@ -16,7 +16,7 @@
  * the main-content area.
  */
 import { type ReactNode } from 'react';
-import type { SupabaseClient } from '@AiDigital-com/design-system';
+import type { SupabaseClient } from '@AiDigital-com/design-system-client';
 import { AssetRail } from './AssetRail';
 import { BriefArtifact } from './BriefArtifact';
 import type { Brief, AssetState, BriefSectionKey } from '../lib/types';

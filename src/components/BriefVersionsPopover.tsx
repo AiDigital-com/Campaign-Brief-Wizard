@@ -4,7 +4,7 @@
  * read-only; "restore to version" is a future item.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { SupabaseClient } from '@AiDigital-com/design-system';
+import type { SupabaseClient } from '@AiDigital-com/design-system-client';
 import type { BriefSectionKey } from '../lib/types';
 
 interface Row {

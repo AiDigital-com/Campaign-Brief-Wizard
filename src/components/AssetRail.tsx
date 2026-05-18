@@ -13,7 +13,7 @@
  *   ingest done (extracted)     → clean tile, no badge
  *   error                       → UploadZone error tile
  */
-import { UploadZone } from '@AiDigital-com/design-system';
+import { UploadZone } from '@AiDigital-com/design-system-client';
 import type { AssetState } from '../lib/types';
 
 const MAX_ASSETS = 10;
