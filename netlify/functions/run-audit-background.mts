@@ -15,7 +15,7 @@
  * replaced with whatever batched pass we eventually want (e.g. an end-of-
  * brief "review" sweep). NOT wired into the orchestrator path today.
  */
-import { createLLMProvider } from '@AiDigital-com/design-system/server';
+import { createLLMProvider } from '@AiDigital-com/design-system-sdk/server';
 import { createClient } from '@supabase/supabase-js';
 import { log } from './_shared/logger.js';
 

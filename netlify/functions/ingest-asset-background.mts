@@ -14,8 +14,8 @@
  * can comfortably exceed Netlify's 26s streaming-mode timeout on large
  * decks. -background suffix flips this to 15-min budget.
  */
-import { createLLMProvider, repairJson } from '@AiDigital-com/design-system/server';
-import { extractDocumentText } from '@AiDigital-com/design-system/document';
+import { createLLMProvider, repairJson } from '@AiDigital-com/design-system-sdk/server';
+import { extractDocumentText } from '@AiDigital-com/design-system-sdk/server';
 import { createClient } from '@supabase/supabase-js';
 import { log } from './_shared/logger.js';
 import { requireAuthOrEmbed } from './_shared/auth.js';

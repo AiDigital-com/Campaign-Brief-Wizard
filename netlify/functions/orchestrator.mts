@@ -13,7 +13,7 @@
  * Model: gemini-3.1-pro-preview ('analysis' tier) — this is a reasoning-heavy
  * problem-solving role, not a quick chat. Pro tier mandatory.
  */
-import { createLLMProvider, type ToolDefinition, type ToolCall, type ChatMessage } from '@AiDigital-com/design-system/server';
+import { createLLMProvider, type ToolDefinition, type ToolCall, type ChatMessage } from '@AiDigital-com/design-system-sdk/server';
 import { requireAuthOrEmbed } from './_shared/auth.js';
 import { log } from './_shared/logger.js';
 import { applyBriefPatch, appendBriefVersion, BRIEF_JSON_SCHEMA } from './_shared/brief.js';

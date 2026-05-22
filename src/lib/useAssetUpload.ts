@@ -14,7 +14,7 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/react';
-import type { SupabaseClient } from '@AiDigital-com/design-system';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AssetState } from './types';
 
 interface State {

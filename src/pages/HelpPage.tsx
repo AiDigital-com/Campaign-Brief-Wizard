@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { HelpPage, applyTheme, resolveTheme } from '@AiDigital-com/design-system';
-import '@AiDigital-com/design-system/style.css';
+import { HelpPage, applyTheme, resolveTheme } from '@AiDigital-com/design-system-client';
+import '@AiDigital-com/design-system-client/style.css';
 
 const GUIDE = `# Campaign Brief Wizard — User Guide
 

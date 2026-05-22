@@ -14,7 +14,7 @@
  *
  * TODO: Set `app` slug + `sessionTable` to match your app.
  */
-import { createDispatchHandler } from '@AiDigital-com/design-system/server';
+import { createDispatchHandler } from '@AiDigital-com/design-system-sdk/server';
 
 // CBW does not currently use the batch pipeline — orchestrator owns the
 // brief artifact and patches it incrementally via patch_brief tool calls.

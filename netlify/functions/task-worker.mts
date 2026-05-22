@@ -15,7 +15,7 @@
  *
  * TODO: Map your app's task_types to function names.
  */
-import { createTaskWorker } from '@AiDigital-com/design-system/server';
+import { createTaskWorker } from '@AiDigital-com/design-system-sdk/server';
 
 // CBW does not currently enqueue tasks — orchestrator + ingest-asset-background
 // are wired directly. Kept ready for a future pipeline phase.
